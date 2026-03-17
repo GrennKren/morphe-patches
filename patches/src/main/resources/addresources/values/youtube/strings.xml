@@ -1,8 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?>
 <!--
-    Tambahkan string-string berikut ke dalam file:
-    patches/src/main/resources/addresources/values/youtube/strings.xml
-
+  
     Strings with new lines must be raw strings where they're wrapped in quotes and new lines are not encoded.
     Raw strings still requires escaping embedded double quotes but escaping embedded single quotes is optional.
 
