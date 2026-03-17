@@ -19,36 +19,54 @@ import com.android.tools.smali.dexlib2.Opcode
 private const val EXTENSION_CLASS_DESCRIPTOR =
     "Lapp/morphe/extension/youtube/patches/BlockPlaylistAutonextPatch;"
 
-// Targets: alnj.c(Lalyc;) — getNavigationDescriptor
-// Identified by unique string "getNavigationDescriptor for "
+// Targets: alzf.d(Lalyc;)V — the concrete implementation of aksi.d()
+// This is what actually executes navigation when autonav/autoplay fires.
+//
+// Called from alju.run() case 4 (AUTONAV) and case 3 (AUTOPLAY):
+//   ((aksi) alxyVar.c.md()).d(new alyc(alyb.AUTONAV, null, ...))
 //
 // Smali structure:
-//   [0] invoke-direct  w()
-//   [1] move-result-object v0
-//   [2] iget-object v1, alnj->a
-//   [3] invoke-interface almw->d(alyc)   ← fetch descriptor into v1
-//   [4] move-result-object v1
-//   [5] const/4 v2, 0x0
-//   [6] invoke-direct x(Object,Z)
-//   [7] if-nez v1, :cond_30              ← INJECT BEFORE HERE
-//   ... null path ...
-//   :cond_30
-//   iget-object p1, p1, Lalyc;->e:Lalyb ← read nav type
-//   check AUTOPLAY / AUTONAV → set flags → return
+//   [0] iget-object v0, p0, Lalzf;->b:Lbjcl
+//   [1] invoke-virtual {v0,p1}, Lbjcl;->z(Lalyc;)Lamqs;   ← resolve nav
+//   [2] move-result-object p1
+//   [3] if-eqz p1, :cond_41                               ← skip if null
+//   ...
+//   invoke-static TextUtils->equals(...)                   ← unique identifier
+//   ...
+//   [:cond_41] return-void
+//
+// Injection: before index 0 — read alyc.e, if AUTONAV/AUTOPLAY → return-void
 
-internal object AlnjGetNavigationDescriptorFingerprint : Fingerprint(
-    returnType = "Lcom/google/android/libraries/youtube/player/model/PlaybackStartDescriptor;",
+internal object AlzfNavigationFingerprint : Fingerprint(
+    returnType = "V",
     parameters = listOf("L"),
-    strings = listOf("getNavigationDescriptor for "),
     filters = listOf(
-        opcode(Opcode.INVOKE_DIRECT),
+        opcode(Opcode.IGET_OBJECT),       // iget bjcl
+        opcode(Opcode.INVOKE_VIRTUAL),    // bjcl->z(alyc)
         opcode(Opcode.MOVE_RESULT_OBJECT),
+        opcode(Opcode.IF_EQZ),            // if-eqz → :cond_41
         opcode(Opcode.IGET_OBJECT),
-        opcode(Opcode.INVOKE_INTERFACE),
+        opcode(Opcode.CHECK_CAST),        // cast to PlaybackStartDescriptor
+        opcode(Opcode.IGET_OBJECT),
+        opcode(Opcode.IGET_BOOLEAN),      // pkj->m
+        opcode(Opcode.IF_EQZ),
+        opcode(Opcode.IGET_OBJECT),
+        opcode(Opcode.IGET_OBJECT),
+        opcode(Opcode.IGET_OBJECT),
+        opcode(Opcode.IF_EQZ),
+        opcode(Opcode.SGET_OBJECT),       // alsw->j (ENDED state)
+        opcode(Opcode.INVOKE_INTERFACE),  // ao(alsw)
+        opcode(Opcode.MOVE_RESULT),
+        opcode(Opcode.IF_EQZ),
+        opcode(Opcode.INVOKE_VIRTUAL),    // v() → videoId
         opcode(Opcode.MOVE_RESULT_OBJECT),
-        opcode(Opcode.CONST_4),
-        opcode(Opcode.INVOKE_DIRECT),
-        opcode(Opcode.IF_NEZ),
+        opcode(Opcode.INVOKE_INTERFACE),  // q() → currentId
+        opcode(Opcode.MOVE_RESULT_OBJECT),
+        opcode(Opcode.INVOKE_STATIC),     // TextUtils.equals(...)
+        opcode(Opcode.MOVE_RESULT),
+        opcode(Opcode.IF_EQZ),
+        opcode(Opcode.INVOKE_VIRTUAL),    // alzp->H()
+        opcode(Opcode.RETURN_VOID),
     ),
 )
 
@@ -69,21 +87,29 @@ val blockPlaylistAutonextPatch = bytecodePatch(
             SwitchPreference("morphe_block_playlist_autonext"),
         )
 
-        // Inject before IF_NEZ (index 7).
-        // At this point v1 = descriptor, p1 = alyc.
-        // Read p1.e (alyb enum), call extension, if blocked → return null.
-        AlnjGetNavigationDescriptorFingerprint.method.apply {
-            val insertIndex = 7
+        // Inject at index 0, before anything runs.
+        // p1 = alyc (the navigation command).
+        // Read p1.e (alyb enum), call extension.
+        // If blocked → return-void immediately, navigation never happens.
+        AlzfNavigationFingerprint.method.apply {
+            val insertIndex = 0
 
             addInstructionsWithLabels(
                 insertIndex,
                 """
+                    # Read nav type from alyc.e
                     iget-object v0, p1, Lalyc;->e:Lalyb;
+
+                    # shouldBlockNavType(Enum) → boolean
                     invoke-static { v0 }, $EXTENSION_CLASS_DESCRIPTOR->shouldBlockNavType(Ljava/lang/Enum;)Z
                     move-result v0
+
+                    # If false → allow, skip to original code
                     if-eqz v0, :allow_autonext
-                    const/4 p1, 0x0
-                    return-object p1
+
+                    # Block: return without doing anything
+                    return-void
+
                     :allow_autonext
                     nop
                 """,
