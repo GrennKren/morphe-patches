@@ -58,6 +58,8 @@ public class BlockPlaylistAutonextPatch {
      * @return true if this navigation type should be blocked
      */
     public static boolean shouldBlockNavType(Enum<?> navTypeEnum) {
+        Logger.printDebug(() -> "shouldBlockNavType called with: " + 
+        (navTypeEnum != null ? navTypeEnum.name() : "null"));
         try {
             if (!Settings.BLOCK_PLAYLIST_AUTONEXT.get()) {
                 return false;
