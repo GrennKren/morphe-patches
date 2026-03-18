@@ -1,7 +1,7 @@
 {
   "created_at": "2026-03-17T16:30:00",
   "description": "## Features\n\n* **YouTube:** Add option to block playlist auto-next",
-  "download_url": "https://github.com/GrennKren/morphe-patches/releases/download/v1.19.2-experimental/patches-1.19.2-experimental.mpp",
+  "download_url": "https://github.com/GrennKren/morphe-patches/releases/download/v1.19.1-experimental/patches-1.19.1-experimental.mpp",
   "signature_download_url": "",
-  "version": "1.19.2-experimental"
+  "version": "1.19.1-experimental"
 }
