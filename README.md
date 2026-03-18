@@ -23,8 +23,39 @@
 </p>
 &nbsp;
 
-# 🧩 Patches
-Morphe Patches
+# 🧩 morphe-patches — GrennKren's fork
+ 
+This is a personal fork of [MorpheApp/morphe-patches](https://github.com/MorpheApp/morphe-patches), used for experimenting with patches that aren't part of the official release.
+ 
+## What's different here?
+ 
+Right now the only addition is **Block playlist auto-next** — a patch that stops YouTube from automatically jumping to the next video when you're in a playlist or mix. There's also a toggle button in the player so you can switch it on/off without having to dig into settings and restart.
+ 
+It's something I originally had as a browser userscript, and wanted to bring to the Android app.
+ 
+---
+ 
+## 🔨 Building
+ 
+You'll need:
+- **JDK 17+** — check with `java -version`
+- **Android SDK** — set `sdk.dir` in `local.properties`, or set `ANDROID_HOME` as an environment variable
+- A **GitHub personal access token** with `read:packages` scope, added to `~/.gradle/gradle.properties`:
+ 
+```properties
+gpr.user=YOUR_GITHUB_USERNAME
+gpr.key=YOUR_GITHUB_TOKEN
+```
+ 
+Then run:
+ 
+```bat
+gradlew.bat :patches:buildAndroid generatePatchesList
+```
+ 
+The output will be in `patches/build/libs/` and `patches-list.json` will be updated automatically.
+ 
+---
 
 ## ❓ About
 
