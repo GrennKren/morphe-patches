@@ -33,7 +33,6 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
 
 // ── Fingerprint ──────────────────────────────────────────────────────────────
 // Targets alzf.d(Lalyc;)V — executes autonav/autoplay navigation.
-// Identified by two unique method calls inside the method body.
 
 internal object AlzfNavigationFingerprint : Fingerprint(
     returnType = "V",
@@ -60,7 +59,6 @@ private val blockPlaylistAutonextButtonResourcePatch = resourcePatch {
     dependsOn(playerControlsResourcePatch)
 
     execute {
-        // Copy drawable icons for the toggle button
         copyResources(
             "blockplaylistautonextbutton",
             ResourceGroup(
@@ -70,7 +68,6 @@ private val blockPlaylistAutonextButtonResourcePatch = resourcePatch {
             )
         )
 
-        // Add button to the player controls overlay (same row as copy URL timestamp button)
         addBottomControl("blockplaylistautonextbutton")
     }
 }
@@ -92,7 +89,7 @@ val blockPlaylistAutonextPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_YOUTUBE)
 
     execute {
-        // Settings: main toggle (default) + button visibility
+        // Settings: main toggle + button visibility
         PreferenceScreen.PLAYER.addPreferences(
             SwitchPreference("morphe_block_playlist_autonext"),
             SwitchPreference("morphe_block_playlist_autonext_button"),
@@ -104,11 +101,19 @@ val blockPlaylistAutonextPatch = bytecodePatch(
             "invoke-static/range { p0 .. p0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->setMainActivity(Landroid/app/Activity;)V",
         )
 
-        // Inject navigation block into alzf.d(alyc)
+        // Inject navigation block and playlist detection into alzf.d(alyc)
+        // p1 = alyc object, which contains:
+        //   .e = alyb enum (AUTONAV, AUTOPLAY, NEXT, etc.)
+        //   .b = String (video ID or playlist ID)
+        //   Other fields may indicate playlist context
         AlzfNavigationFingerprint.method.apply {
             addInstructionsWithLabels(
                 0,
                 """
+                    # Pass the full alyc object to extension for playlist detection
+                    invoke-static { p1 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->onNavigationEvent(Ljava/lang/Object;)V
+
+                    # Check navigation type and block if needed
                     iget-object v0, p1, Lalyc;->e:Lalyb;
                     invoke-static { v0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->shouldBlockNavType(Ljava/lang/Enum;)Z
                     move-result v0
