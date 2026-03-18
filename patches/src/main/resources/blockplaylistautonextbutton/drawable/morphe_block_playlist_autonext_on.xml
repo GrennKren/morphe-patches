@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Block playlist auto-next button — ON state (autonext is blocked).
+    Skip-next icon with a diagonal strike-through to indicate blocking.
+-->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="24dp"
+            android:height="24dp"
+            android:viewportWidth="24"
+            android:viewportHeight="24">
+            <group
+                android:name="icon_group"
+                android:pivotX="12"
+                android:pivotY="12">
+                <!-- Skip-next icon (forward to next) -->
+                <path
+                    android:fillColor="@android:color/white"
+                    android:pathData="M6,18L6,6L15,12ZM16,6L16,18L18,18L18,6Z"/>
+                <!-- Strike-through diagonal line (blocked indicator) -->
+                <path
+                    android:strokeColor="#FF5252"
+                    android:strokeWidth="2"
+                    android:fillColor="#00000000"
+                    android:pathData="M3,21 L21,3"/>
+            </group>
+        </vector>
+    </aapt:attr>
+
+    <target android:name="icon_group">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator
+                    android:propertyName="scaleX"
+                    android:duration="150"
+                    android:valueFrom="1.0"
+                    android:valueTo="1.2"
+                    android:interpolator="@android:interpolator/overshoot"/>
+                <objectAnimator
+                    android:propertyName="scaleY"
+                    android:duration="150"
+                    android:valueFrom="1.0"
+                    android:valueTo="1.2"
+                    android:interpolator="@android:interpolator/overshoot"/>
+                <objectAnimator
+                    android:propertyName="scaleX"
+                    android:duration="150"
+                    android:startOffset="150"
+                    android:valueFrom="1.2"
+                    android:valueTo="1.0"
+                    android:interpolator="@android:interpolator/anticipate_overshoot"/>
+                <objectAnimator
+                    android:propertyName="scaleY"
+                    android:duration="150"
+                    android:startOffset="150"
+                    android:valueFrom="1.2"
+                    android:valueTo="1.0"
+                    android:interpolator="@android:interpolator/anticipate_overshoot"/>
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>

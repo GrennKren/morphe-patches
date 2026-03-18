@@ -525,7 +525,8 @@ public class Settings extends SharedYouTubeSettings {
     private static final BooleanSetting DEPRECATED_SEEKBAR_TAPPING = new BooleanSetting("morphe_seekbar_tapping", FALSE);
     private static final BooleanSetting DEPRECATED_DISABLE_RESUMING_SHORTS_PLAYER = new BooleanSetting("morphe_disable_resuming_shorts_player", FALSE);
 
-    public static final BooleanSetting BLOCK_PLAYLIST_AUTONEXT = new BooleanSetting("morphe_block_playlist_autonext", FALSE, true);
+    public static final BooleanSetting BLOCK_PLAYLIST_AUTONEXT = new BooleanSetting("morphe_block_playlist_autonext", TRUE, false);
+    public static final BooleanSetting BLOCK_PLAYLIST_AUTONEXT_BUTTON = new BooleanSetting("morphe_block_playlist_autonext_button", TRUE);
 
     static {
         // region Migration
