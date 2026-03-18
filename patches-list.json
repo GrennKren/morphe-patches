@@ -42,10 +42,12 @@
     },
     {
       "name": "Block playlist auto-next",
-      "description": "Adds an option to block automatic navigation to the next video in playlists and mixes.",
+      "description": "Adds an option to block automatic navigation to the next video in playlists and mixes, with a toggle button in the player overlay.",
       "use": true,
       "dependencies": [
         "BytecodePatch",
+        "BytecodePatch",
+        "ResourcePatch",
         "BytecodePatch"
       ],
       "compatiblePackages": {
