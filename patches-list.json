@@ -1480,6 +1480,26 @@
       "options": []
     },
     {
+      "name": "Miniplayer previous and next buttons",
+      "description": "Adds options to show previous and next track buttons in the miniplayer.",
+      "use": true,
+      "dependencies": [
+        "BytecodePatch",
+        "BytecodePatch",
+        "ResourcePatch",
+        "ResourcePatch"
+      ],
+      "compatiblePackages": {
+        "com.google.android.apps.youtube.music": [
+          "8.44.54",
+          "8.40.54",
+          "8.10.52",
+          "7.29.52"
+        ]
+      },
+      "options": []
+    },
+    {
       "name": "Navigation bar",
       "description": "Adds options to hide navigation bar, labels and buttons.",
       "use": true,
@@ -1671,6 +1691,26 @@
       "use": true,
       "dependencies": [
         "BytecodePatch",
+        "BytecodePatch",
+        "BytecodePatch"
+      ],
+      "compatiblePackages": {
+        "com.google.android.youtube": [
+          "20.45.36",
+          "20.44.38",
+          "20.40.45",
+          "20.31.42",
+          "20.21.37"
+        ]
+      },
+      "options": []
+    },
+    {
+      "name": "Reload video",
+      "description": "Adds options to display buttons in the video player to reload video.",
+      "use": true,
+      "dependencies": [
+        "ResourcePatch",
         "BytecodePatch",
         "BytecodePatch"
       ],

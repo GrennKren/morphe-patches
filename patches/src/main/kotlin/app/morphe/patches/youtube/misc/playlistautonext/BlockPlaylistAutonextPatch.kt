@@ -9,6 +9,7 @@ import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.methodCall
+import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
 import app.morphe.patches.shared.misc.settings.preference.SwitchPreference
@@ -32,10 +33,40 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
     "Lapp/morphe/extension/youtube/videoplayer/BlockPlaylistAutonextButton;"
 
 // ── Fingerprint ──────────────────────────────────────────────────────────────
-// Targets alzf.d(Lalyc;)V — executes autonav/autoplay navigation.
-// Identified by two unique method calls inside the method body.
+// Multi-version support for blocking playlist auto-next navigation.
+//
+// YouTube 20.45.x:
+//   - Target: amah.d(alzf)V
+//   - Calls: bjex.z(alzf) → amrv
+//   - Nav data: Lalzf; with field e:Lalze;
+//
+// YouTube 20.44.x:
+//   - Target: alzf.d(alyc)V
+//   - Calls: bjcl.z(alyc) → amqs
+//   - Nav data: Lalyc; with field e:Lalyb;
 
-internal object AlzfNavigationFingerprint : Fingerprint(
+// Fingerprint for YouTube 20.45.x
+internal object NavigationFingerprintV20_45 : Fingerprint(
+    returnType = "V",
+    parameters = listOf("L"),
+    filters = listOf(
+        methodCall(
+            definingClass = "Lbjex;",
+            name = "z",
+            parameters = listOf("Lalzf;"),
+            returnType = "Lamrv;",
+        ),
+        methodCall(
+            definingClass = "Landroid/text/TextUtils;",
+            name = "equals",
+            parameters = listOf("Ljava/lang/CharSequence;", "Ljava/lang/CharSequence;"),
+            returnType = "Z",
+        ),
+    ),
+)
+
+// Fingerprint for YouTube 20.44.x
+internal object NavigationFingerprintV20_44 : Fingerprint(
     returnType = "V",
     parameters = listOf("L"),
     filters = listOf(
@@ -104,9 +135,37 @@ val blockPlaylistAutonextPatch = bytecodePatch(
             "invoke-static/range { p0 .. p0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->setMainActivity(Landroid/app/Activity;)V",
         )
 
-        // Inject navigation block into alzf.d(alyc)
-        AlzfNavigationFingerprint.method.apply {
-            addInstructionsWithLabels(
+        // Try to match fingerprint for YouTube 20.45.x first
+        val fingerprintV20_45Result = NavigationFingerprintV20_45.matchOrNull()
+
+        if (fingerprintV20_45Result != null) {
+            // YouTube 20.45.x detected
+            // Inject into amah.d(alzf)
+            // Field alzf.e contains alze enum (AUTONAV, AUTOPLAY, NEXT, etc.)
+            fingerprintV20_45Result.method.addInstructionsWithLabels(
+                0,
+                """
+                    iget-object v0, p1, Lalzf;->e:Lalze;
+                    invoke-static { v0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->shouldBlockNavType(Ljava/lang/Enum;)Z
+                    move-result v0
+                    if-eqz v0, :allow_autonext
+                    return-void
+                    :allow_autonext
+                    nop
+                """,
+            )
+        } else {
+            // Try fingerprint for YouTube 20.44.x
+            val fingerprintV20_44Result = NavigationFingerprintV20_44.matchOrNull()
+                ?: throw PatchException(
+                    "Failed to match any fingerprint. " +
+                    "Supported versions: 20.44.38, 20.45.36"
+                )
+
+            // YouTube 20.44.x detected
+            // Inject into alzf.d(alyc)
+            // Field alyc.e contains alyb enum (AUTONAV, AUTOPLAY, NEXT, etc.)
+            fingerprintV20_44Result.method.addInstructionsWithLabels(
                 0,
                 """
                     iget-object v0, p1, Lalyc;->e:Lalyb;

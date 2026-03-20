@@ -19,8 +19,9 @@ public class BlockPlaylistAutonextPatch {
     }
 
     /**
-     * Injection point — alzf.d(alyc).
-     * @param navTypeEnum The alyb enum (AUTONAV, AUTOPLAY, NEXT, etc.)
+     * Injection point — amah.d(alzf) for YouTube 20.45+.
+     * Previous versions (20.44.x): alzf.d(alyc) with alyb enum.
+     * @param navTypeEnum The alze enum (AUTONAV, AUTOPLAY, NEXT, etc.)
      * @return true if navigation should be blocked
      */
     public static boolean shouldBlockNavType(Enum<?> navTypeEnum) {
