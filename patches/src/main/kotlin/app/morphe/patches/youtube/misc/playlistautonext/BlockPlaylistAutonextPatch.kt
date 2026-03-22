@@ -33,48 +33,26 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
     "Lapp/morphe/extension/youtube/videoplayer/BlockPlaylistAutonextButton;"
 
 // ── Fingerprint ──────────────────────────────────────────────────────────────
-// Multi-version support for blocking playlist auto-next navigation.
+// Single fingerprint for all supported versions.
 //
-// YouTube 20.45.x:
-//   - Target: amah.d(alzf)V
-//   - Calls: bjex.z(alzf) → amrv
-//   - Nav data: Lalzf; with field e:Lalze;
+// Strategy: Do not hardcode obfuscated class names (bjex/bjcl, alzf/alyc, etc.).
+// Primary anchor  : TextUtils.equals — Android SDK, never renamed.
+// Secondary anchor: method "z" with a single object parameter + object return,
+//                   called before TextUtils.equals.
 //
-// YouTube 20.44.x:
-//   - Target: alzf.d(alyc)V
-//   - Calls: bjcl.z(alyc) → amqs
-//   - Nav data: Lalyc; with field e:Lalyb;
+// This pattern is consistent across all versions because:
+//   - returnType "V", parameters ["L"] — unchanged
+//   - Always calls a navigation method "z", then a string comparison
+//   - TextUtils.equals is always present to check the navigation type
 
-// Fingerprint for YouTube 20.45.x
-internal object NavigationFingerprintV20_45 : Fingerprint(
+internal object NavigationFingerprint : Fingerprint(
     returnType = "V",
     parameters = listOf("L"),
     filters = listOf(
         methodCall(
-            definingClass = "Lbjex;",
-            name = "z",
-            parameters = listOf("Lalzf;"),
-            returnType = "Lamrv;",
-        ),
-        methodCall(
-            definingClass = "Landroid/text/TextUtils;",
-            name = "equals",
-            parameters = listOf("Ljava/lang/CharSequence;", "Ljava/lang/CharSequence;"),
-            returnType = "Z",
-        ),
-    ),
-)
-
-// Fingerprint for YouTube 20.44.x
-internal object NavigationFingerprintV20_44 : Fingerprint(
-    returnType = "V",
-    parameters = listOf("L"),
-    filters = listOf(
-        methodCall(
-            definingClass = "Lbjcl;",
-            name = "z",
-            parameters = listOf("Lalyc;"),
-            returnType = "Lamqs;",
+            name = "z",               // method name does not change
+            parameters = listOf("L"), // single object parameter (alzf / alyc / ...)
+            returnType = "L",         // returns an object (amrv / amqs / ...)
         ),
         methodCall(
             definingClass = "Landroid/text/TextUtils;",
@@ -101,7 +79,7 @@ private val blockPlaylistAutonextButtonResourcePatch = resourcePatch {
             )
         )
 
-        // Add button to the player controls overlay (same row as copy URL timestamp button)
+        // Add button to the player controls overlay
         addBottomControl("blockplaylistautonextbutton")
     }
 }
@@ -123,7 +101,7 @@ val blockPlaylistAutonextPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_YOUTUBE)
 
     execute {
-        // Settings: main toggle (default) + button visibility
+        // Settings: main toggle + button visibility
         PreferenceScreen.PLAYER.addPreferences(
             SwitchPreference("morphe_block_playlist_autonext"),
             SwitchPreference("morphe_block_playlist_autonext_button"),
@@ -135,49 +113,38 @@ val blockPlaylistAutonextPatch = bytecodePatch(
             "invoke-static/range { p0 .. p0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->setMainActivity(Landroid/app/Activity;)V",
         )
 
-        // Try to match fingerprint for YouTube 20.45.x first
-        val fingerprintV20_45Result = NavigationFingerprintV20_45.matchOrNull()
+        val result = NavigationFingerprint.match()
+        val method = result.method
 
-        if (fingerprintV20_45Result != null) {
-            // YouTube 20.45.x detected
-            // Inject into amah.d(alzf)
-            // Field alzf.e contains alze enum (AUTONAV, AUTOPLAY, NEXT, etc.)
-            fingerprintV20_45Result.method.addInstructionsWithLabels(
-                0,
-                """
-                    iget-object v0, p1, Lalzf;->e:Lalze;
-                    invoke-static { v0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->shouldBlockNavType(Ljava/lang/Enum;)Z
-                    move-result v0
-                    if-eqz v0, :allow_autonext
-                    return-void
-                    :allow_autonext
-                    nop
-                """,
-            )
-        } else {
-            // Try fingerprint for YouTube 20.44.x
-            val fingerprintV20_44Result = NavigationFingerprintV20_44.matchOrNull()
-                ?: throw PatchException(
-                    "Failed to match any fingerprint. " +
-                    "Supported versions: 20.44.38, 20.45.36"
-                )
+        // Read its type directly from the method signature
+        val navParamType = method.parameterTypes[0].toString()
+        
+        var enumFieldType: String? = null
 
-            // YouTube 20.44.x detected
-            // Inject into alzf.d(alyc)
-            // Field alyc.e contains alyb enum (AUTONAV, AUTOPLAY, NEXT, etc.)
-            fingerprintV20_44Result.method.addInstructionsWithLabels(
-                0,
-                """
-                    iget-object v0, p1, Lalyc;->e:Lalyb;
-                    invoke-static { v0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->shouldBlockNavType(Ljava/lang/Enum;)Z
-                    move-result v0
-                    if-eqz v0, :allow_autonext
-                    return-void
-                    :allow_autonext
-                    nop
-                """,
-            )
+        classDefForEach { classDef ->
+            if (classDef.type != navParamType) return@classDefForEach
+            enumFieldType = classDef.fields
+                .firstOrNull { it.name == "e" }
+                ?.type
         }
+
+        enumFieldType ?: throw PatchException(
+            "Could not find field 'e' in $navParamType. " +
+            "This YouTube version may not be supported."
+        )
+
+        method.addInstructionsWithLabels(
+            0,
+            """
+                iget-object v0, p1, $navParamType->e:$enumFieldType
+                invoke-static { v0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->shouldBlockNavType(Ljava/lang/Enum;)Z
+                move-result v0
+                if-eqz v0, :allow_autonext
+                return-void
+                :allow_autonext
+                nop
+            """,
+        )
 
         // Initialize player overlay toggle button
         initializeBottomControl(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
