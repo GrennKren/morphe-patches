@@ -10,12 +10,24 @@ import android.view.View;
 import androidx.annotation.Nullable;
 
 import app.morphe.extension.shared.Logger;
+import app.morphe.extension.youtube.patches.VideoInformation;
 import app.morphe.extension.youtube.settings.Settings;
 
 @SuppressWarnings("unused")
 public class BlockPlaylistAutonextButton {
     @Nullable
     private static PlayerControlButton instance;
+
+    /**
+     * Check if the button should be visible.
+     * Button is shown only when:
+     * 1. The button visibility setting is enabled
+     * 2. The current video is part of a playlist or mix
+     */
+    private static boolean shouldShowButton() {
+        return Settings.BLOCK_PLAYLIST_AUTONEXT_BUTTON.get()
+                && !VideoInformation.getPlaylistId().isEmpty();
+    }
 
     /**
      * Injection point.
@@ -26,8 +38,8 @@ public class BlockPlaylistAutonextButton {
                     controlsView,
                     "morphe_block_playlist_autonext_button",
                     null,
-                    // Button is shown only when in a playlist (autonext setting is enabled by default)
-                    Settings.BLOCK_PLAYLIST_AUTONEXT_BUTTON::get,
+                    // Button is shown only when in a playlist/mix AND setting is enabled
+                    BlockPlaylistAutonextButton::shouldShowButton,
                     view -> toggleAutonext(),
                     null
             );
