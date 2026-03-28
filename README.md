@@ -50,7 +50,7 @@ gpr.key=YOUR_GITHUB_TOKEN
 Then run:
  
 ```bat
-gradlew.bat :patches:buildAndroid generatePatchesList
+gradlew.bat clean :patches:buildAndroid generatePatchesList
 ```
  
 The output will be in `patches/build/libs/` and `patches-list.json` will be updated automatically.
