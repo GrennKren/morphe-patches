@@ -13,6 +13,8 @@ import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
 import app.morphe.patches.shared.misc.settings.preference.SwitchPreference
+import app.morphe.patches.youtube.layout.player.buttons.addPlayerBottomButton
+import app.morphe.patches.youtube.layout.player.buttons.playerOverlayButtonsHookPatch
 import app.morphe.patches.youtube.misc.extension.sharedExtensionPatch
 import app.morphe.patches.youtube.misc.playercontrols.addLegacyBottomControl
 import app.morphe.patches.youtube.misc.playercontrols.initializeLegacyBottomControl
@@ -66,20 +68,26 @@ internal object NavigationFingerprint : Fingerprint(
 // ── Resource patch ───────────────────────────────────────────────────────────
 
 private val blockPlaylistAutonextButtonResourcePatch = resourcePatch {
-    dependsOn(legacyPlayerControlsResourcePatch)
+    dependsOn(
+        settingsPatch,
+        legacyPlayerControlsResourcePatch
+    )
 
     execute {
-        // Copy drawable icons for the toggle button
+        // Copy drawable icons for both button systems
+        // Bold (new overlay) + Legacy (old XML layout)
         copyResources(
             "blockplaylistautonextbutton",
             ResourceGroup(
                 "drawable",
                 "morphe_block_playlist_autonext_on.xml",
                 "morphe_block_playlist_autonext_off.xml",
+                "morphe_block_playlist_autonext_bold.xml",
+                "morphe_block_playlist_autonext_off_bold.xml",
             )
         )
 
-        // Add button to the player controls overlay
+        // Add button layout to the legacy bottom controls
         addLegacyBottomControl("blockplaylistautonextbutton")
     }
 }
@@ -95,6 +103,7 @@ val blockPlaylistAutonextPatch = bytecodePatch(
         sharedExtensionPatch,
         settingsPatch,
         blockPlaylistAutonextButtonResourcePatch,
+        playerOverlayButtonsHookPatch,
         legacyPlayerControlsPatch,
     )
 
@@ -146,7 +155,12 @@ val blockPlaylistAutonextPatch = bytecodePatch(
             """,
         )
 
-        // Initialize player overlay toggle button
+        // ── New bold overlay button system ──
+        // Injects initializeButton(View) call into the fullscreen button creation method.
+        // The View parameter is the fullscreen button itself, used as position/style anchor.
+        addPlayerBottomButton(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
+
+        // ── Legacy button system ──
         initializeLegacyBottomControl(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
         injectVisibilityCheckCall(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
     }

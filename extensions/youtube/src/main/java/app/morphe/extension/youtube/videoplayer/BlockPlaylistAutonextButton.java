@@ -8,17 +8,25 @@ package app.morphe.extension.youtube.videoplayer;
 import static app.morphe.extension.youtube.patches.LegacyPlayerControlsPatch.RESTORE_OLD_PLAYER_BUTTONS;
 
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageView;
 
 import androidx.annotation.Nullable;
 
+import java.lang.ref.WeakReference;
+
 import app.morphe.extension.shared.Logger;
+import app.morphe.extension.shared.Utils;
 import app.morphe.extension.youtube.patches.VideoInformation;
 import app.morphe.extension.youtube.settings.Settings;
 
 @SuppressWarnings("unused")
 public class BlockPlaylistAutonextButton {
     @Nullable
-    private static LegacyPlayerControlButton instance;
+    private static LegacyPlayerControlButton legacyInstance;
+
+    @Nullable
+    private static WeakReference<ImageView> overlayButtonRef;
 
     /**
      * Check if the button should be visible.
@@ -32,7 +40,44 @@ public class BlockPlaylistAutonextButton {
     }
 
     /**
-     * Injection point.
+     * Injection point — NEW bold overlay button system.
+     * Called from the fullscreen button creation method.
+     * The View parameter is the fullscreen button, used as position/style anchor.
+     */
+    public static void initializeButton(View sourceButton) {
+        try {
+            if (RESTORE_OLD_PLAYER_BUTTONS || !shouldShowButton()) {
+                return;
+            }
+
+            String drawableName = Settings.BLOCK_PLAYLIST_AUTONEXT.get()
+                    ? "morphe_block_playlist_autonext_bold"
+                    : "morphe_block_playlist_autonext_off_bold";
+
+            PlayerOverlayButton.addButton(
+                    sourceButton,
+                    drawableName,
+                    view -> toggleAutonext(),
+                    null
+            );
+
+            // PlayerOverlayButton.addButton() returns void, but we can grab
+            // the ImageView it just created — it's always the last child of
+            // the sourceButton's parent ViewGroup.
+            if (sourceButton.getParent() instanceof ViewGroup parent) {
+                int lastIdx = parent.getChildCount() - 1;
+                if (lastIdx >= 0 && parent.getChildAt(lastIdx) instanceof ImageView iv) {
+                    overlayButtonRef = new WeakReference<>(iv);
+                }
+            }
+        } catch (Exception ex) {
+            Logger.printException(() -> "initializeButton (overlay) failure", ex);
+        }
+    }
+
+    /**
+     * Injection point — Legacy button system.
+     * Used when "Restore old player buttons" setting is enabled.
      */
     public static void initializeLegacyButton(View controlsView) {
         try {
@@ -40,7 +85,7 @@ public class BlockPlaylistAutonextButton {
                 return;
             }
 
-            instance = new LegacyPlayerControlButton(
+            legacyInstance = new LegacyPlayerControlButton(
                     controlsView,
                     "morphe_block_playlist_autonext_button",
                     null,
@@ -51,9 +96,9 @@ public class BlockPlaylistAutonextButton {
                     null
             );
             // Update icon to reflect current state on init
-            updateIcon();
+            updateLegacyIcon();
         } catch (Exception ex) {
-            Logger.printException(() -> "initializeButton failure", ex);
+            Logger.printException(() -> "initializeLegacyButton failure", ex);
         }
     }
 
@@ -64,56 +109,73 @@ public class BlockPlaylistAutonextButton {
         try {
             boolean current = Settings.BLOCK_PLAYLIST_AUTONEXT.get();
             Settings.BLOCK_PLAYLIST_AUTONEXT.save(!current);
-            updateIcon();
+            updateOverlayIcon();
+            updateLegacyIcon();
+            Utils.showToastShort(
+                    !current ? "Playlist auto-next: Blocked" : "Playlist auto-next: Allowed"
+            );
         } catch (Exception ex) {
             Logger.printException(() -> "toggleAutonext failure", ex);
         }
     }
 
     /**
-     * Update icon to reflect current block state.
-     * ON  (blocked)  = skip icon with X / disabled look
-     * OFF (allowed)  = normal skip icon
+     * Update overlay button icon to reflect current block state.
+     * ON  (blocked)  = skip icon with red strike-through (bold style)
+     * OFF (allowed)  = plain skip icon (bold style)
      */
-    private static void updateIcon() {
+    private static void updateOverlayIcon() {
         try {
-            if (instance == null) return;
-            if (Settings.BLOCK_PLAYLIST_AUTONEXT.get()) {
-                instance.setIcon(
-                    app.morphe.extension.shared.ResourceUtils.getDrawableIdentifier(
-                        "morphe_block_playlist_autonext_on"
-                    )
-                );
-            } else {
-                instance.setIcon(
-                    app.morphe.extension.shared.ResourceUtils.getDrawableIdentifier(
-                        "morphe_block_playlist_autonext_off"
-                    )
-                );
-            }
+            ImageView iv = overlayButtonRef != null ? overlayButtonRef.get() : null;
+            if (iv == null) return;
+            String drawableName = Settings.BLOCK_PLAYLIST_AUTONEXT.get()
+                    ? "morphe_block_playlist_autonext_bold"
+                    : "morphe_block_playlist_autonext_off_bold";
+            iv.setImageResource(
+                    app.morphe.extension.shared.ResourceUtils.getDrawableIdentifier(drawableName)
+            );
         } catch (Exception ex) {
-            Logger.printException(() -> "updateIcon failure", ex);
+            Logger.printException(() -> "updateOverlayIcon failure", ex);
         }
     }
 
     /**
-     * Injection point.
+     * Update legacy button icon to reflect current block state.
+     * ON  (blocked)  = skip icon with red strike-through + animation
+     * OFF (allowed)  = dimmed skip icon + animation
+     */
+    private static void updateLegacyIcon() {
+        try {
+            if (legacyInstance == null) return;
+            String drawableName = Settings.BLOCK_PLAYLIST_AUTONEXT.get()
+                    ? "morphe_block_playlist_autonext_on"
+                    : "morphe_block_playlist_autonext_off";
+            legacyInstance.setIcon(
+                    app.morphe.extension.shared.ResourceUtils.getDrawableIdentifier(drawableName)
+            );
+        } catch (Exception ex) {
+            Logger.printException(() -> "updateLegacyIcon failure", ex);
+        }
+    }
+
+    /**
+     * Injection point — Legacy visibility hook.
      */
     public static void setVisibilityNegatedImmediate() {
-        if (instance != null) instance.setVisibilityNegatedImmediate();
+        if (legacyInstance != null) legacyInstance.setVisibilityNegatedImmediate();
     }
 
     /**
-     * Injection point.
+     * Injection point — Legacy visibility hook.
      */
     public static void setVisibilityImmediate(boolean visible) {
-        if (instance != null) instance.setVisibilityImmediate(visible);
+        if (legacyInstance != null) legacyInstance.setVisibilityImmediate(visible);
     }
 
     /**
-     * Injection point.
+     * Injection point — Legacy visibility hook.
      */
     public static void setVisibility(boolean visible, boolean animated) {
-        if (instance != null) instance.setVisibility(visible, animated);
+        if (legacyInstance != null) legacyInstance.setVisibility(visible, animated);
     }
 }

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Block playlist auto-next button — OFF state (bold style for new overlay system).
+    Autonext is allowed: plain skip-next icon.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Skip-next icon (forward to next) -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M6,18L6,6L15,12ZM16,6L16,18L18,18L18,6Z"/>
+</vector>
