@@ -5,6 +5,8 @@
 
 package app.morphe.extension.youtube.videoplayer;
 
+import static app.morphe.extension.youtube.patches.LegacyPlayerControlsPatch.RESTORE_OLD_PLAYER_BUTTONS;
+
 import android.view.View;
 
 import androidx.annotation.Nullable;
@@ -34,6 +36,10 @@ public class BlockPlaylistAutonextButton {
      */
     public static void initializeLegacyButton(View controlsView) {
         try {
+            if (!RESTORE_OLD_PLAYER_BUTTONS) {
+                return;
+            }
+
             instance = new LegacyPlayerControlButton(
                     controlsView,
                     "morphe_block_playlist_autonext_button",
