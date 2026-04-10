@@ -14,11 +14,11 @@ import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
 import app.morphe.patches.shared.misc.settings.preference.SwitchPreference
 import app.morphe.patches.youtube.misc.extension.sharedExtensionPatch
-import app.morphe.patches.youtube.misc.playercontrols.addBottomControl
-import app.morphe.patches.youtube.misc.playercontrols.initializeBottomControl
+import app.morphe.patches.youtube.misc.playercontrols.addLegacyBottomControl
+import app.morphe.patches.youtube.misc.playercontrols.initializeLegacyBottomControl
 import app.morphe.patches.youtube.misc.playercontrols.injectVisibilityCheckCall
-import app.morphe.patches.youtube.misc.playercontrols.playerControlsPatch
-import app.morphe.patches.youtube.misc.playercontrols.playerControlsResourcePatch
+import app.morphe.patches.youtube.misc.playercontrols.legacyPlayerControlsPatch
+import app.morphe.patches.youtube.misc.playercontrols.legacyPlayerControlsResourcePatch
 import app.morphe.patches.youtube.misc.settings.PreferenceScreen
 import app.morphe.patches.youtube.misc.settings.settingsPatch
 import app.morphe.patches.youtube.shared.Constants.COMPATIBILITY_YOUTUBE
@@ -66,7 +66,7 @@ internal object NavigationFingerprint : Fingerprint(
 // ── Resource patch ───────────────────────────────────────────────────────────
 
 private val blockPlaylistAutonextButtonResourcePatch = resourcePatch {
-    dependsOn(playerControlsResourcePatch)
+    dependsOn(legacyPlayerControlsResourcePatch)
 
     execute {
         // Copy drawable icons for the toggle button
@@ -80,7 +80,7 @@ private val blockPlaylistAutonextButtonResourcePatch = resourcePatch {
         )
 
         // Add button to the player controls overlay
-        addBottomControl("blockplaylistautonextbutton")
+        addLegacyBottomControl("blockplaylistautonextbutton")
     }
 }
 
@@ -95,7 +95,7 @@ val blockPlaylistAutonextPatch = bytecodePatch(
         sharedExtensionPatch,
         settingsPatch,
         blockPlaylistAutonextButtonResourcePatch,
-        playerControlsPatch,
+        legacyPlayerControlsPatch,
     )
 
     compatibleWith(COMPATIBILITY_YOUTUBE)
@@ -147,7 +147,7 @@ val blockPlaylistAutonextPatch = bytecodePatch(
         )
 
         // Initialize player overlay toggle button
-        initializeBottomControl(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
+        initializeLegacyBottomControl(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
         injectVisibilityCheckCall(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
     }
 }
