@@ -16,7 +16,7 @@ import app.morphe.extension.youtube.settings.Settings;
 @SuppressWarnings("unused")
 public class BlockPlaylistAutonextButton {
     @Nullable
-    private static PlayerControlButton instance;
+    private static LegacyPlayerControlButton instance;
 
     /**
      * Check if the button should be visible.
@@ -32,11 +32,12 @@ public class BlockPlaylistAutonextButton {
     /**
      * Injection point.
      */
-    public static void initializeButton(View controlsView) {
+    public static void initializeLegacyButton(View controlsView) {
         try {
-            instance = new PlayerControlButton(
+            instance = new LegacyPlayerControlButton(
                     controlsView,
                     "morphe_block_playlist_autonext_button",
+                    null,
                     null,
                     // Button is shown only when in a playlist/mix AND setting is enabled
                     BlockPlaylistAutonextButton::shouldShowButton,
