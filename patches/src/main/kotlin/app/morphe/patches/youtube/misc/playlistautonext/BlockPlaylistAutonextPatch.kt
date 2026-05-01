@@ -35,27 +35,27 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
     "Lapp/morphe/extension/youtube/videoplayer/BlockPlaylistAutonextButton;"
 
 // ── Fingerprint ──────────────────────────────────────────────────────────────
-// Single fingerprint for all supported versions.
+// Matches the navigation event handler in the YouTube sequencer.
 //
-// Strategy: Do not hardcode obfuscated class names (bjex/bjcl, alzf/alyc, etc.).
-// Primary anchor  : TextUtils.equals — Android SDK, never renamed.
-// Secondary anchor: method "z" with a single object parameter + object return,
-//                   called before TextUtils.equals.
+// Strategy: Do not hardcode obfuscated class names (amfc, amfa, etc.).
+// Primary anchor: TextUtils.equals — Android SDK, never renamed.
 //
-// This pattern is consistent across all versions because:
-//   - returnType "V", parameters ["L"] — unchanged
-//   - Always calls a navigation method "z", then a string comparison
-//   - TextUtils.equals is always present to check the navigation type
+// The actual method signature is e(Lamfk;Lamfc;)V where:
+//   - p1 = Lamfk (cast to Lamgq, the playback request)
+//   - p2 = Lamfc (navigation event containing navType enum in field "c")
+//
+// The second parameter's class (Lamfc) has:
+//   - field b: I          (index)
+//   - field c: Lamfa      (navType enum: NONE, PREV, NEXT, AUTOPLAY, AUTONAV, JUMP)
+//   - field d: Lamfb      (playback start descriptor mutator)
+//
+// Across versions the obfuscated names change, but the structural pattern
+// (two-object-param void method using TextUtils.equals) stays the same.
 
 internal object NavigationFingerprint : Fingerprint(
     returnType = "V",
-    parameters = listOf("L"),
+    parameters = listOf("L", "L"),
     filters = listOf(
-        methodCall(
-            name = "z",               // method name does not change
-            parameters = listOf("L"), // single object parameter (alzf / alyc / ...)
-            returnType = "L",         // returns an object (amrv / amqs / ...)
-        ),
         methodCall(
             definingClass = "Landroid/text/TextUtils;",
             name = "equals",
@@ -125,27 +125,48 @@ val blockPlaylistAutonextPatch = bytecodePatch(
         val result = NavigationFingerprint.match()
         val method = result.method
 
-        // Read its type directly from the method signature
-        val navParamType = method.parameterTypes[0].toString()
-        
+        // The second parameter contains the navigation type enum.
+        // p1 = playback request (Lamfk), p2 = navigation event (Lamfc)
+        val navParamType = method.parameterTypes[1].toString()
+
+        // Get the navigation event class definition directly.
+        val navParamClassDef = classDefBy(navParamType)
+
+        // Find the enum-typed field in the navigation event class.
+        // In 20.47.62 the field is named "c" of type Lamfa, but obfuscated
+        // names shift across versions. Detect the field dynamically by
+        // checking which field's type extends java.lang.Enum.
+        var enumFieldName: String? = null
         var enumFieldType: String? = null
 
-        classDefForEach { classDef ->
-            if (classDef.type != navParamType) return@classDefForEach
-            enumFieldType = classDef.fields
-                .firstOrNull { it.name == "e" }
-                ?.type
+        for (field in navParamClassDef.fields) {
+            val fType = field.type.toString()
+            if (!fType.startsWith("L")) continue
+
+            // Look up the field's class and check if it is an enum.
+            val fieldClassDef = try {
+                classDefBy(fType)
+            } catch (_: Exception) {
+                continue
+            }
+
+            if (fieldClassDef.superclass == "Ljava/lang/Enum;") {
+                enumFieldName = field.name
+                enumFieldType = fType
+                break
+            }
         }
 
         enumFieldType ?: throw PatchException(
-            "Could not find field 'e' in $navParamType. " +
+            "Could not find enum field in $navParamType. " +
             "This YouTube version may not be supported."
         )
 
+        // p2 = second parameter (navigation event object)
         method.addInstructionsWithLabels(
             0,
             """
-                iget-object v0, p1, $navParamType->e:$enumFieldType
+                iget-object v0, p2, $navParamType->$enumFieldName:$enumFieldType
                 invoke-static { v0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->shouldBlockNavType(Ljava/lang/Enum;)Z
                 move-result v0
                 if-eqz v0, :allow_autonext
