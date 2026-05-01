@@ -2,10 +2,6 @@ name: Update patches README
 
 on:
     workflow_dispatch:
-        inputs:
-            branch:
-                description: 'Branch to update README on (defaults to current branch)'
-                required: false
 
 jobs:
     update-readme:
@@ -17,13 +13,13 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v6
               with:
-                  ref: ${{ github.event.inputs.branch || github.ref_name }}
+                  ref: ${{ github.ref_name }}
                   fetch-depth: 0
 
             - name: Update README patches section
               run: |
                   python3 .github/scripts/generate_patches_readme.py \
-                    ${{ github.event.inputs.branch || github.ref_name }} \
+                    ${{ github.ref_name }} \
                     patches-list.json \
                     README.md
 
