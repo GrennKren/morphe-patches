@@ -1,5 +1,5 @@
 {
-  "version": "v1.24.0-experimental.1",
+  "version": "v1.24.0-experimental.2",
   "patches": [
     {
       "name": "Alternative thumbnails",
