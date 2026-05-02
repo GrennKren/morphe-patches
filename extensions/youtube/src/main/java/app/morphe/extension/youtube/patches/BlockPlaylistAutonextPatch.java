@@ -19,9 +19,28 @@ public class BlockPlaylistAutonextPatch {
     }
 
     /**
-     * Injection point — amah.d(alzf) for YouTube 20.45+.
-     * Previous versions (20.44.x): alzf.d(alyc) with alyb enum.
-     * @param navTypeEnum The alze enum (AUTONAV, AUTOPLAY, NEXT, etc.)
+     * Injection point — navigation handler methods.
+     * Hooked in ALL navigation handler paths (V2 and V1Fallback).
+     *
+     * YouTube 20.45 and earlier: single 1-param handler (Lamah;->d(Lalzf;)V)
+     *   - Enum type Lalze with values AUTONAV, AUTOPLAY, NEXT, etc.
+     *
+     * YouTube 20.47+: TWO handlers:
+     *   V2 (primary):     2-param (Lamfk;Lamfc;)V — enum type Lamfa
+     *   V1Fallback:       1-param (Lameq;)V — enum type Lamep
+     *
+     * The navType enum values across all versions include:
+     *   NONE, PREV, NEXT, AUTOPLAY, AUTONAV, JUMP
+     *
+     * Only AUTONAV and AUTOPLAY are blocked. These represent automatic/
+     * autonomous navigation (playlist auto-next). NEXT is NOT blocked
+     * because it represents a user-initiated action (pressing the next
+     * button), which should remain functional.
+     *
+     * This matches the behavior of v1.23.0-experimental.1 and the
+     * browser userscript approach (which blocks autonav flag, not next).
+     *
+     * @param navTypeEnum The navigation type enum (AUTONAV, AUTOPLAY, NEXT, etc.)
      * @return true if navigation should be blocked
      */
     public static boolean shouldBlockNavType(Enum<?> navTypeEnum) {
@@ -33,7 +52,15 @@ public class BlockPlaylistAutonextPatch {
                 return false;
             }
 
-            return "AUTONAV".equals(name) || "AUTOPLAY".equals(name);
+            // Only block AUTONAV and AUTOPLAY — automatic navigation types.
+            // NEXT is a user-initiated action and must NOT be blocked.
+            // This is consistent with v1.23.0 behavior and the userscript approach.
+            if ("AUTONAV".equals(name) || "AUTOPLAY".equals(name)) {
+                Logger.printDebug(() -> "BlockPlaylistAutonext: BLOCKING nav type = " + name);
+                return true;
+            }
+
+            return false;
 
         } catch (Exception ex) {
             Logger.printException(() -> "shouldBlockNavType failure", ex);

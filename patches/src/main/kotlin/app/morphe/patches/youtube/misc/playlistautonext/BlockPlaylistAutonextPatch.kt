@@ -35,25 +35,41 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
     "Lapp/morphe/extension/youtube/videoplayer/BlockPlaylistAutonextButton;"
 
 // ── Fingerprints ─────────────────────────────────────────────────────────────
-// Match the navigation event handler in the YouTube sequencer.
 //
-// Strategy: Do not hardcode obfuscated class names.
-// Primary anchor  : TextUtils.equals — Android SDK, never renamed.
-// Secondary anchor: PlaybackStartDescriptor — YouTube SDK class, not obfuscated.
+// YouTube's navigation sequencer has evolved across versions:
 //
-// YouTube 20.47+ restructured the navigation handler:
-//   - Old (20.45): 1-param method calling method "z" + TextUtils.equals
-//   - New (20.47): 2-param method with PlaybackStartDescriptor + TextUtils.equals
-//   - New (20.47): 1-param fallback with PlaybackStartDescriptor + TextUtils.equals (no method "z")
+//   YouTube 20.45 and earlier:
+//     Single 1-param handler: Lamah;->d(Lalzf;)V
+//     - Lalzf has enum field "e" of type Lalze (navType enum)
+//     - Calls method "z" on the parameter, then TextUtils.equals
 //
-// The PlaybackStartDescriptor method call is critical for uniqueness:
-// without it, the fingerprint matches ~25 methods that also call
-// TextUtils.equals with two reference parameters. Adding the
-// PlaybackStartDescriptor return-type filter narrows the match to
-// only the navigation handler.
+//   YouTube 20.47+:
+//     TWO navigation handlers exist:
+//     V2 (primary):     2-param handler with PlaybackStartDescriptor
+//     V1Fallback:       1-param handler (legacy fallback path)
+//
+//     V2 (e.g. Lanah;->e(Lamfk;Lamfc;)V):
+//     - p1 = playback request, p2 = navigation event
+//     - Calls a method returning PlaybackStartDescriptor
+//     - Calls TextUtils.equals to check navigation type
+//
+//     V1Fallback (e.g. someClass;->someMethod(Lameq;)V):
+//     - 1 parameter (navigation event object)
+//     - Calls TextUtils.equals to check navigation type
+//     - Does NOT call PlaybackStartDescriptor
+//
+// CRITICAL: On YouTube 20.47+, playlist auto-next may go through the
+// V1Fallback path instead of (or in addition to) the V2 path. We must
+// hook ALL navigation handlers to ensure blocking works.
+//
+// Strategy:
+//   1. Find nav type enum classes via "AUTONAV" string constant
+//   2. Find nav event classes that have a field of those enum types
+//   3. V2: Specific fingerprint with PlaybackStartDescriptor
+//   4. V1: Broad fingerprint + filter by nav event parameter type
 
 // YouTube 20.47+ 2-param navigation handler (e.g. Lanah;->e(Lamfk;Lamfc;)V)
-// p1 = playback request, p2 = navigation event containing navType enum
+// Very specific: PlaybackStartDescriptor + TextUtils.equals + 2 params
 internal object NavigationFingerprintV2 : Fingerprint(
     returnType = "V",
     parameters = listOf("L", "L"),
@@ -70,35 +86,13 @@ internal object NavigationFingerprintV2 : Fingerprint(
     ),
 )
 
-// YouTube 20.45 and earlier 1-param navigation handler (e.g. Lamah;->d(Lalzf;)V)
-// p1 = navigation event containing navType enum, uses method "z" pattern
+// Broad 1-param fingerprint for V1/V1Fallback navigation handlers.
+// Requires post-filtering by checking the parameter type against known
+// navigation event classes (found via nav type enum string search).
 internal object NavigationFingerprintV1 : Fingerprint(
     returnType = "V",
     parameters = listOf("L"),
     filters = listOf(
-        methodCall(
-            name = "z",
-            parameters = listOf("L"),
-            returnType = "L",
-        ),
-        methodCall(
-            definingClass = "Landroid/text/TextUtils;",
-            name = "equals",
-            parameters = listOf("Ljava/lang/CharSequence;", "Ljava/lang/CharSequence;"),
-            returnType = "Z",
-        ),
-    ),
-)
-
-// YouTube 20.47 1-param fallback navigation handler (e.g. Lamfs;->d(Lameq;)V)
-// p1 = navigation event containing navType enum, has PlaybackStartDescriptor but no method "z"
-internal object NavigationFingerprintV1Fallback : Fingerprint(
-    returnType = "V",
-    parameters = listOf("L"),
-    filters = listOf(
-        methodCall(
-            returnType = "Lcom/google/android/libraries/youtube/player/model/PlaybackStartDescriptor;",
-        ),
         methodCall(
             definingClass = "Landroid/text/TextUtils;",
             name = "equals",
@@ -117,8 +111,6 @@ private val blockPlaylistAutonextButtonResourcePatch = resourcePatch {
     )
 
     execute {
-        // Copy drawable icons for both button systems
-        // Bold (new overlay) + Legacy (old XML layout)
         copyResources(
             "blockplaylistautonextbutton",
             ResourceGroup(
@@ -130,7 +122,6 @@ private val blockPlaylistAutonextButtonResourcePatch = resourcePatch {
             )
         )
 
-        // Add button layout to the legacy bottom controls
         addLegacyBottomControl("blockplaylistautonextbutton")
     }
 }
@@ -165,83 +156,144 @@ val blockPlaylistAutonextPatch = bytecodePatch(
             "invoke-static/range { p0 .. p0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->setMainActivity(Landroid/app/Activity;)V",
         )
 
-        // Try fingerprints in order:
-        //   V2        — 2-param handler (YouTube 20.47+)
-        //   V1        — 1-param handler with method "z" (YouTube 20.45 and earlier)
-        //   V1Fallback — 1-param handler with PlaybackStartDescriptor but no method "z" (YouTube 20.47)
-        val result = try {
-            NavigationFingerprintV2.match()
-        } catch (_: Exception) {
-            try {
-                NavigationFingerprintV1.match()
-            } catch (_: Exception) {
-                NavigationFingerprintV1Fallback.match()
-            }
-        }
+        // ── Helper: find enum-typed field in a class ──
+        // Returns Pair(field name, field type) or null.
+        fun findEnumFieldInClass(classType: String): Pair<String, String>? {
+            val classDef = classDefByOrNull(classType) ?: return null
 
-        val method = result.method
-
-        // For 2-param (V2): nav event is the second parameter (p2).
-        // For 1-param (V1/V1Fallback): nav event is the first parameter (p1).
-        val isTwoParam = method.parameterTypes.size >= 2
-        val navParamIndex = if (isTwoParam) 1 else 0
-        val navParamType = method.parameterTypes[navParamIndex].toString()
-        val navParamReg = if (isTwoParam) "p2" else "p1"
-
-        // ── Dynamic enum field detection ──
-        // The obfuscated field name holding the navigation type enum differs
-        // across YouTube versions (e.g. "e" in 20.45, "c" in 20.47 V2, "e" in 20.47 V1Fallback).
-        // Instead of hardcoding the field name, we detect it dynamically by:
-        //   1. Collecting all class types whose superclass is java.lang.Enum
-        //   2. Finding the field in the nav parameter class whose type is one of those enums
-
-        // Pass 1: collect all enum class types
-        val enumTypes = mutableSetOf<String>()
-        classDefForEach { classDef ->
-            if (classDef.superclass == "Ljava/lang/Enum;") {
-                enumTypes.add(classDef.type)
-            }
-        }
-
-        // Pass 2: find the enum-typed field in the navigation event class
-        var enumFieldName: String? = null
-        var enumFieldType: String? = null
-
-        classDefForEach { classDef ->
-            if (classDef.type != navParamType) return@classDefForEach
-
-            classDef.fields.forEach { field ->
+            for (field in classDef.fields) {
                 val fType = field.type.toString()
-                if (fType in enumTypes) {
-                    enumFieldName = field.name
-                    enumFieldType = fType
+                if (!fType.startsWith("L")) continue
+
+                val fieldClassDef = classDefByOrNull(fType) ?: continue
+                if (fieldClassDef.superclass == "Ljava/lang/Enum;") {
+                    return Pair(field.name, fType)
+                }
+            }
+
+            return null
+        }
+
+        // ── Collect ALL navigation handlers to hook ──
+        data class HandlerInfo(
+            val method: app.morphe.patcher.util.proxy.mutableTypes.MutableMethod,
+            val navParamReg: String,
+            val navParamType: String,
+            val enumFieldName: String,
+            val enumFieldType: String,
+        )
+
+        val handlers = mutableListOf<HandlerInfo>()
+
+        // ── Step 1: Find nav type enum classes via "AUTONAV" string ──
+        // The navigation type enum (e.g. Lamfa, Lamep, Lalze) always contains
+        // "AUTONAV" as a string constant (used in enum valueOf/switch).
+        val navTypeEnumTypes = mutableSetOf<String>()
+        for (enumClass in classDefByStrings("AUTONAV")) {
+            if (enumClass.superclass == "Ljava/lang/Enum;") {
+                navTypeEnumTypes.add(enumClass.type)
+            }
+        }
+
+        // ── Step 2: Find nav event classes that have a field of nav type enum ──
+        // These are the parameter types passed to navigation handlers.
+        val navEventClassTypes = mutableSetOf<String>()
+        classDefForEach { classDef ->
+            for (field in classDef.fields) {
+                if (field.type.toString() in navTypeEnumTypes) {
+                    navEventClassTypes.add(classDef.type)
+                    break
                 }
             }
         }
 
-        enumFieldType ?: throw PatchException(
-            "Could not find enum field in $navParamType. " +
-            "This YouTube version may not be supported."
-        )
+        // ── Step 3: Hook V2 handler (2-param with PlaybackStartDescriptor) ──
+        NavigationFingerprintV2.matchOrNull()?.let { result ->
+            val method = result.method
+            val navParamType = method.parameterTypes[1].toString()
 
-        // Inject early-return check: if the navigation type should be blocked,
-        // return before the sequencer can process the navigation.
-        method.addInstructionsWithLabels(
-            0,
-            """
-                iget-object v0, $navParamReg, $navParamType->$enumFieldName:$enumFieldType
-                invoke-static { v0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->shouldBlockNavType(Ljava/lang/Enum;)Z
-                move-result v0
-                if-eqz v0, :allow_autonext
-                return-void
-                :allow_autonext
-                nop
-            """,
-        )
+            // Verify the second parameter is a known nav event class
+            if (navParamType in navEventClassTypes) {
+                val enumField = findEnumFieldInClass(navParamType)
+                if (enumField != null) {
+                    handlers.add(
+                        HandlerInfo(method, "p2", navParamType, enumField.first, enumField.second)
+                    )
+                }
+            }
+        }
+
+        // ── Step 4: Hook V1/V1Fallback handlers (1-param with TextUtils.equals) ──
+        // Use broad fingerprint then filter by nav event parameter type.
+        // This catches the V1Fallback on 20.47+ and the V1 handler on 20.45-.
+        val v1Matches = NavigationFingerprintV1.matchAllOrNull() ?: emptyList()
+        for (match in v1Matches) {
+            val method = match.method
+            val navParamType = method.parameterTypes[0].toString()
+
+            // Skip if we already hooked this method via V2 fingerprint
+            if (handlers.any { it.method == method }) continue
+
+            // Only hook if the parameter type is a known nav event class
+            if (navParamType !in navEventClassTypes) continue
+
+            val enumField = findEnumFieldInClass(navParamType)
+            if (enumField != null) {
+                handlers.add(
+                    HandlerInfo(method, "p1", navParamType, enumField.first, enumField.second)
+                )
+            }
+        }
+
+        // ── Step 5: Fallback for older versions without "AUTONAV" string ──
+        // On very old YouTube versions, the nav type enum might not contain
+        // "AUTONAV" as a string literal. Fall back to enum field detection.
+        if (handlers.isEmpty() && navTypeEnumTypes.isEmpty()) {
+            for (match in v1Matches) {
+                val method = match.method
+                val navParamType = method.parameterTypes[0].toString()
+
+                if (handlers.any { it.method == method }) continue
+
+                val enumField = findEnumFieldInClass(navParamType)
+                if (enumField != null) {
+                    handlers.add(
+                        HandlerInfo(method, "p1", navParamType, enumField.first, enumField.second)
+                    )
+                }
+            }
+        }
+
+        if (handlers.isEmpty()) {
+            throw PatchException(
+                "Could not find any navigation handler to hook. " +
+                "Nav type enums found: ${navTypeEnumTypes.size}, " +
+                "Nav event classes found: ${navEventClassTypes.size}, " +
+                "V1 broad matches: ${v1Matches.size}. " +
+                "This YouTube version may not be supported."
+            )
+        }
+
+        // ── Hook each matched handler ──
+        for ((method, navParamReg, navParamType, enumFieldName, enumFieldType) in handlers) {
+            // Inject early-return check at the very start of the method:
+            // If the navigation type should be blocked, return before the
+            // sequencer can process the navigation.
+            method.addInstructionsWithLabels(
+                0,
+                """
+                    iget-object v0, $navParamReg, $navParamType->$enumFieldName:$enumFieldType
+                    invoke-static { v0 }, $EXTENSION_PATCH_CLASS_DESCRIPTOR->shouldBlockNavType(Ljava/lang/Enum;)Z
+                    move-result v0
+                    if-eqz v0, :allow_autonext
+                    return-void
+                    :allow_autonext
+                    nop
+                """,
+            )
+        }
 
         // ── New bold overlay button system ──
-        // Injects initializeButton(View) call into the fullscreen button creation method.
-        // The View parameter is the fullscreen button itself, used as position/style anchor.
         addPlayerBottomButton(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
 
         // ── Legacy button system ──
