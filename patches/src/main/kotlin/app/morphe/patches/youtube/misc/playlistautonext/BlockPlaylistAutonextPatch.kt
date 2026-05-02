@@ -37,7 +37,7 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
 // ── Fingerprints ─────────────────────────────────────────────────────────────
 // Match the navigation event handler in the YouTube sequencer.
 //
-// Strategy: Do not hardcode obfuscated class names (amfc, amfa, etc.).
+// Strategy: Do not hardcode obfuscated class names.
 // Primary anchor  : TextUtils.equals — Android SDK, never renamed.
 // Secondary anchor: PlaybackStartDescriptor — YouTube SDK class, not obfuscated.
 //
@@ -188,30 +188,34 @@ val blockPlaylistAutonextPatch = bytecodePatch(
         val navParamType = method.parameterTypes[navParamIndex].toString()
         val navParamReg = if (isTwoParam) "p2" else "p1"
 
-        // Get the navigation event class definition directly.
-        val navParamClassDef = classDefBy(navParamType)
+        // ── Dynamic enum field detection ──
+        // The obfuscated field name holding the navigation type enum differs
+        // across YouTube versions (e.g. "e" in 20.45, "c" in 20.47 V2, "e" in 20.47 V1Fallback).
+        // Instead of hardcoding the field name, we detect it dynamically by:
+        //   1. Collecting all class types whose superclass is java.lang.Enum
+        //   2. Finding the field in the nav parameter class whose type is one of those enums
 
-        // Find the enum-typed field in the navigation event class.
-        // Obfuscated names shift across versions, so detect dynamically by
-        // checking which field's type extends java.lang.Enum.
+        // Pass 1: collect all enum class types
+        val enumTypes = mutableSetOf<String>()
+        classDefForEach { classDef ->
+            if (classDef.superclass == "Ljava/lang/Enum;") {
+                enumTypes.add(classDef.type)
+            }
+        }
+
+        // Pass 2: find the enum-typed field in the navigation event class
         var enumFieldName: String? = null
         var enumFieldType: String? = null
 
-        for (field in navParamClassDef.fields) {
-            val fType = field.type.toString()
-            if (!fType.startsWith("L")) continue
+        classDefForEach { classDef ->
+            if (classDef.type != navParamType) return@classDefForEach
 
-            // Look up the field's class and check if it is an enum.
-            val fieldClassDef = try {
-                classDefBy(fType)
-            } catch (_: Exception) {
-                continue
-            }
-
-            if (fieldClassDef.superclass == "Ljava/lang/Enum;") {
-                enumFieldName = field.name
-                enumFieldType = fType
-                break
+            classDef.fields.forEach { field ->
+                val fType = field.type.toString()
+                if (fType in enumTypes) {
+                    enumFieldName = field.name
+                    enumFieldType = fType
+                }
             }
         }
 
