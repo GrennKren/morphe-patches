@@ -38,7 +38,8 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
 // Matches the navigation event handler in the YouTube sequencer.
 //
 // Strategy: Do not hardcode obfuscated class names (amfc, amfa, etc.).
-// Primary anchor: TextUtils.equals — Android SDK, never renamed.
+// Primary anchor  : TextUtils.equals — Android SDK, never renamed.
+// Secondary anchor: PlaybackStartDescriptor — YouTube SDK class, not obfuscated.
 //
 // The actual method signature is e(Lamfk;Lamfc;)V where:
 //   - p1 = Lamfk (cast to Lamgq, the playback request)
@@ -49,13 +50,19 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
 //   - field c: Lamfa      (navType enum: NONE, PREV, NEXT, AUTOPLAY, AUTONAV, JUMP)
 //   - field d: Lamfb      (playback start descriptor mutator)
 //
-// Across versions the obfuscated names change, but the structural pattern
-// (two-object-param void method using TextUtils.equals) stays the same.
+// The PlaybackStartDescriptor method call is critical for uniqueness:
+// without it, the fingerprint matches ~25 methods that also call
+// TextUtils.equals with two reference parameters. Adding the
+// PlaybackStartDescriptor return-type filter narrows the match to
+// only the navigation handler.
 
 internal object NavigationFingerprint : Fingerprint(
     returnType = "V",
     parameters = listOf("L", "L"),
     filters = listOf(
+        methodCall(
+            returnType = "Lcom/google/android/libraries/youtube/player/model/PlaybackStartDescriptor;",
+        ),
         methodCall(
             definingClass = "Landroid/text/TextUtils;",
             name = "equals",
