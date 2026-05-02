@@ -1005,16 +1005,7 @@ To show the Audio track menu, change \'Spoof video streams\' to \'Android Reel\'
     <string name="morphe_disable_fullscreen_ambient_mode_summary_on">Ambient mode in fullscreen is disabled</string>
     <string name="morphe_disable_fullscreen_ambient_mode_summary_off">Ambient mode in fullscreen is enabled</string>
 
-    <!-- Block Playlist Auto-next -->
-    <string name="morphe_block_playlist_autonext_title">Block playlist auto-next</string>
-    <string name="morphe_block_playlist_autonext_summary_on">Auto-next in playlists and mixes is blocked</string>
-    <string name="morphe_block_playlist_autonext_summary_off">Auto-next in playlists and mixes works normally</string>
-
-    <string name="morphe_block_playlist_autonext_button_title">Block auto-next button</string>
-    <string name="morphe_block_playlist_autonext_button_summary_on">Toggle button shown in player</string>
-    <string name="morphe_block_playlist_autonext_button_summary_off">Toggle button hidden</string>
-
-    <!-- layout.hide.infocards.hideInfocardsPatch -->
+    <!-- layout.hide.infocards.hideInfocardsResourcePatch -->
     <string name="morphe_hide_info_cards_title">Hide info cards</string>
     <string name="morphe_hide_info_cards_summary_on">Info cards are hidden</string>
     <string name="morphe_hide_info_cards_summary_off">Info cards are shown</string>
