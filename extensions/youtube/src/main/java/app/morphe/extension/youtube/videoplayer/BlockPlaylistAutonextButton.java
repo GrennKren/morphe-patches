@@ -9,6 +9,7 @@ import static app.morphe.extension.youtube.patches.LegacyPlayerControlsPatch.RES
 
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 
 import androidx.annotation.Nullable;
@@ -43,10 +44,25 @@ public class BlockPlaylistAutonextButton {
      * Injection point — NEW bold overlay button system.
      * Called from the fullscreen button creation method.
      * The View parameter is the fullscreen button, used as position/style anchor.
+     *
+     * The button is ALWAYS created (if the setting is enabled and we're in bold mode),
+     * then a dedicated OnPreDrawListener enforces visibility based on playlist state.
+     * This fixes the issue where the button would never appear if a non-playlist
+     * video was playing when the button was first initialized.
+     *
+     * How it works:
+     *   1. PlayerOverlayButtonController sets visibility to match the source button
+     *      (VISIBLE when controls are shown, GONE when hidden) on every preDraw.
+     *   2. Our listener runs AFTER that (added later), so it can override:
+     *      - If shouldShowButton() is false → force GONE (hide outside playlists)
+     *      - If shouldShowButton() is true  → leave as-is (controller's visibility applies)
+     *   This produces the same behavior as the Legacy system's PlayerControlButtonStatus.
      */
     public static void initializeButton(View sourceButton) {
         try {
-            if (RESTORE_OLD_PLAYER_BUTTONS || !shouldShowButton()) {
+            // Only skip if using legacy buttons OR the button setting is entirely disabled.
+            // Do NOT check shouldShowButton() here — the pre-draw listener handles that.
+            if (RESTORE_OLD_PLAYER_BUTTONS || !Settings.BLOCK_PLAYLIST_AUTONEXT_BUTTON.get()) {
                 return;
             }
 
@@ -68,6 +84,40 @@ public class BlockPlaylistAutonextButton {
                 int lastIdx = parent.getChildCount() - 1;
                 if (lastIdx >= 0 && parent.getChildAt(lastIdx) instanceof ImageView iv) {
                     overlayButtonRef = new WeakReference<>(iv);
+
+                    // Add a pre-draw listener that runs AFTER the
+                    // PlayerOverlayButtonController's listener (which was added
+                    // first during addButton). This allows us to override the
+                    // visibility each frame based on playlist state.
+                    iv.getViewTreeObserver().addOnPreDrawListener(
+                            new ViewTreeObserver.OnPreDrawListener() {
+                                @Override
+                                public boolean onPreDraw() {
+                                    ImageView btn = overlayButtonRef != null
+                                            ? overlayButtonRef.get() : null;
+                                    if (btn == null) {
+                                        // Button was garbage collected — remove listener.
+                                        iv.getViewTreeObserver()
+                                                .removeOnPreDrawListener(this);
+                                        return true;
+                                    }
+                                    // If not in a playlist/mix, hide the button.
+                                    // When in a playlist, let the default controller
+                                    // visibility (matching source button) apply.
+                                    if (!shouldShowButton()) {
+                                        if (btn.getVisibility() != View.GONE) {
+                                            btn.setVisibility(View.GONE);
+                                        }
+                                    }
+                                    return true;
+                                }
+                            }
+                    );
+
+                    // Set initial visibility immediately.
+                    if (!shouldShowButton()) {
+                        iv.setVisibility(View.GONE);
+                    }
                 }
             }
         } catch (Exception ex) {
