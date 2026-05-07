@@ -38,7 +38,7 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
 //
 // YouTube's navigation sequencer has evolved across versions:
 //
-//   YouTube 20.45 and earlier:
+//   YouTube 20.44 / 20.45 and earlier:
 //     Single 1-param handler: Lamah;->d(Lalzf;)V
 //     - Lalzf has enum field "e" of type Lalze (navType enum)
 //     - Calls method "z" on the parameter, then TextUtils.equals
@@ -62,11 +62,13 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
 // V1Fallback path instead of (or in addition to) the V2 path. We must
 // hook ALL navigation handlers to ensure blocking works.
 //
-// Strategy:
+// Strategy (multi-layer for maximum version compatibility):
 //   1. Find nav type enum classes via "AUTONAV" string constant
 //   2. Find nav event classes that have a field of those enum types
-//   3. V2: Specific fingerprint with PlaybackStartDescriptor
+//   3. V2: Specific fingerprint with PlaybackStartDescriptor (20.47+)
 //   4. V1: Broad fingerprint + filter by nav event parameter type
+//   5. Legacy: Specific fingerprint with "z" method name (20.44/20.45)
+//   6. Fallback: Enum field detection only (very old versions)
 
 // YouTube 20.47+ 2-param navigation handler (e.g. Lanah;->e(Lamfk;Lamfc;)V)
 // Very specific: PlaybackStartDescriptor + TextUtils.equals + 2 params
@@ -93,6 +95,28 @@ internal object NavigationFingerprintV1 : Fingerprint(
     returnType = "V",
     parameters = listOf("L"),
     filters = listOf(
+        methodCall(
+            definingClass = "Landroid/text/TextUtils;",
+            name = "equals",
+            parameters = listOf("Ljava/lang/CharSequence;", "Ljava/lang/CharSequence;"),
+            returnType = "Z",
+        ),
+    ),
+)
+
+// Legacy fingerprint for YouTube 20.44/20.45 (and potentially older).
+// More specific than V1: anchors on the "z" method name which is the
+// navigation type accessor used in older YouTube versions.
+// This comes from v1.23.0-experimental.1 and is preserved for compat.
+internal object NavigationFingerprintLegacy : Fingerprint(
+    returnType = "V",
+    parameters = listOf("L"),
+    filters = listOf(
+        methodCall(
+            name = "z",               // method name does not change on 20.44/20.45
+            parameters = listOf("L"), // single object parameter (alzf / alyc / ...)
+            returnType = "L",         // returns an object (amrv / amqs / ...)
+        ),
         methodCall(
             definingClass = "Landroid/text/TextUtils;",
             name = "equals",
@@ -158,6 +182,7 @@ val blockPlaylistAutonextPatch = bytecodePatch(
 
         // ── Helper: find enum-typed field in a class ──
         // Returns Pair(field name, field type) or null.
+        // Tries all enum-typed fields; on 20.44/20.45 the field is named "e".
         fun findEnumFieldInClass(classType: String): Pair<String, String>? {
             val classDef = classDefByOrNull(classType) ?: return null
 
@@ -184,6 +209,7 @@ val blockPlaylistAutonextPatch = bytecodePatch(
         )
 
         val handlers = mutableListOf<HandlerInfo>()
+        val hookedMethods = mutableSetOf<app.morphe.patcher.util.proxy.mutableTypes.MutableMethod>()
 
         // ── Step 1: Find nav type enum classes via "AUTONAV" string ──
         // The navigation type enum (e.g. Lamfa, Lamep, Lalze) always contains
@@ -208,6 +234,7 @@ val blockPlaylistAutonextPatch = bytecodePatch(
         }
 
         // ── Step 3: Hook V2 handler (2-param with PlaybackStartDescriptor) ──
+        // This only exists on YouTube 20.47+.
         NavigationFingerprintV2.matchOrNull()?.let { result ->
             val method = result.method
             val navParamType = method.parameterTypes[1].toString()
@@ -219,6 +246,7 @@ val blockPlaylistAutonextPatch = bytecodePatch(
                     handlers.add(
                         HandlerInfo(method, "p2", navParamType, enumField.first, enumField.second)
                     )
+                    hookedMethods.add(method)
                 }
             }
         }
@@ -229,10 +257,9 @@ val blockPlaylistAutonextPatch = bytecodePatch(
         val v1Matches = NavigationFingerprintV1.matchAllOrNull() ?: emptyList()
         for (match in v1Matches) {
             val method = match.method
-            val navParamType = method.parameterTypes[0].toString()
+            if (method in hookedMethods) continue
 
-            // Skip if we already hooked this method via V2 fingerprint
-            if (handlers.any { it.method == method }) continue
+            val navParamType = method.parameterTypes[0].toString()
 
             // Only hook if the parameter type is a known nav event class
             if (navParamType !in navEventClassTypes) continue
@@ -242,24 +269,61 @@ val blockPlaylistAutonextPatch = bytecodePatch(
                 handlers.add(
                     HandlerInfo(method, "p1", navParamType, enumField.first, enumField.second)
                 )
+                hookedMethods.add(method)
             }
         }
 
-        // ── Step 5: Fallback for older versions without "AUTONAV" string ──
-        // On very old YouTube versions, the nav type enum might not contain
-        // "AUTONAV" as a string literal. Fall back to enum field detection.
-        if (handlers.isEmpty() && navTypeEnumTypes.isEmpty()) {
-            for (match in v1Matches) {
-                val method = match.method
+        // ── Step 5: Legacy fingerprint for YouTube 20.44/20.45 ──
+        // Uses the specific "z" method name pattern from v1.23.0-experimental.1.
+        // This is more targeted than the broad V1 fingerprint and will match
+        // the navigation handler on older YouTube versions even if the
+        // "AUTONAV" string search didn't find any enum classes.
+        NavigationFingerprintLegacy.matchOrNull()?.let { result ->
+            val method = result.method
+            if (method !in hookedMethods) {
                 val navParamType = method.parameterTypes[0].toString()
-
-                if (handlers.any { it.method == method }) continue
 
                 val enumField = findEnumFieldInClass(navParamType)
                 if (enumField != null) {
                     handlers.add(
                         HandlerInfo(method, "p1", navParamType, enumField.first, enumField.second)
                     )
+                    hookedMethods.add(method)
+                } else {
+                    // Fallback for 20.44/20.45: the enum field is always named "e"
+                    // This matches the v1.23.0-experimental.1 behavior exactly.
+                    val classDef = classDefByOrNull(navParamType)
+                    val fieldE = classDef?.fields?.firstOrNull { it.name == "e" }
+                    if (fieldE != null) {
+                        val eType = fieldE.type.toString()
+                        // Verify it's actually an enum
+                        val eClassDef = classDefByOrNull(eType)
+                        if (eClassDef?.superclass == "Ljava/lang/Enum;") {
+                            handlers.add(
+                                HandlerInfo(method, "p1", navParamType, "e", eType)
+                            )
+                            hookedMethods.add(method)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Step 6: Fallback for older versions without "AUTONAV" string ──
+        // On very old YouTube versions, the nav type enum might not contain
+        // "AUTONAV" as a string literal. Fall back to enum field detection.
+        if (handlers.isEmpty() && navTypeEnumTypes.isEmpty()) {
+            for (match in v1Matches) {
+                val method = match.method
+                if (method in hookedMethods) continue
+
+                val navParamType = method.parameterTypes[0].toString()
+                val enumField = findEnumFieldInClass(navParamType)
+                if (enumField != null) {
+                    handlers.add(
+                        HandlerInfo(method, "p1", navParamType, enumField.first, enumField.second)
+                    )
+                    hookedMethods.add(method)
                 }
             }
         }
