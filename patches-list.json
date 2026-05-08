@@ -105,6 +105,7 @@
             },
             {
               "version": "21.16.256",
+<<<<<<< HEAD
               "isExperimental": true,
               "minSdk": 28,
               "description": null
@@ -175,6 +176,8 @@
             },
             {
               "version": "21.16.256",
+=======
+>>>>>>> 20db6682ed2ece390a3f1cd82b3dfe694e758950
               "isExperimental": true,
               "minSdk": 28,
               "description": null
