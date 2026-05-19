@@ -630,10 +630,12 @@ To show the \'Audio Track\' menu, change \'Spoof video streams\' to \'Android Re
 
     <!-- Block Playlist Auto-next -->
     <string name="morphe_block_playlist_autonext_title">Block playlist auto-next</string>
+    <string name="morphe_block_playlist_autonext_summary">Blocks automatic navigation to the next video in playlists and mixes</string>
     <string name="morphe_block_playlist_autonext_summary_on">Auto-next in playlists and mixes is blocked</string>
     <string name="morphe_block_playlist_autonext_summary_off">Auto-next in playlists and mixes works normally</string>
 
     <string name="morphe_block_playlist_autonext_button_title">Block auto-next button</string>
+    <string name="morphe_block_playlist_autonext_button_summary">Show a toggle button in the player overlay</string>
     <string name="morphe_block_playlist_autonext_button_summary_on">Toggle button shown in player</string>
     <string name="morphe_block_playlist_autonext_button_summary_off">Toggle button hidden</string>
 
