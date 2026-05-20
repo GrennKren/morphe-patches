@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-19",
+  "created_at": "2026-05-19T09:08:00",
   "description": "Fork of morphe-patches v1.28.0 with Block playlist auto-next patch. Based on [1.28.0](https://github.com/MorpheApp/morphe-patches/compare/v1.27.0...v1.28.0) upstream.\n\n### Fork additions\n* **YouTube - Block playlist auto-next:** Adds an option to block automatic navigation to the next video in playlists and mixes, with a toggle button in the player overlay.\n\n### Upstream changes (v1.28.0)\n* **YouTube - Hide ads:** Hide new type of product sticker\n* **YouTube - Hide layout components:** Hide new type of community post\n* **YouTube - Open channel of live avatar:** Multiple fixes for localizations and video player\n* **YouTube - PlayerOverlayButton:** Fix race condition and margin issues\n* **YouTube Music:** Add experimental support for 9.19.50\n* **YouTube:** Add experimental support for 21.20.400\n* Simplify settings summary text\n* Add miscellaneous link handling preference",
   "download_url": "https://github.com/GrennKren/morphe-patches/releases/download/v1.28.0-experimental.2/patches-1.28.0-experimental.2.mpp",
   "signature_download_url": "",
