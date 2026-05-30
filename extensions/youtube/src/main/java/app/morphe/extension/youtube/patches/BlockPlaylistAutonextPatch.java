@@ -29,6 +29,10 @@ public class BlockPlaylistAutonextPatch {
      *   V2 (primary):     2-param (Lamfk;Lamfc;)V — enum type Lamfa
      *   V1Fallback:       1-param (Lameq;)V — enum type Lamep
      *
+     * YouTube 20.51+: TWO handlers (same structure, new obfuscation):
+     *   V2 (primary):     2-param (Lamiz;Lamir;)V — enum type Lamip
+     *   V1Fallback:       1-param (Lamif;)V — enum type Lamie
+     *
      * The navType enum values across all versions include:
      *   NONE, PREV, NEXT, AUTOPLAY, AUTONAV, JUMP
      *

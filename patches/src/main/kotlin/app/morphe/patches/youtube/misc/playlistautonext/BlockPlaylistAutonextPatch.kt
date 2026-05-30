@@ -70,7 +70,9 @@ private const val EXTENSION_BUTTON_CLASS_DESCRIPTOR =
 //   5. Legacy: Specific fingerprint with "z" method name (20.44/20.45)
 //   6. Fallback: Enum field detection only (very old versions)
 
-// YouTube 20.47+ 2-param navigation handler (e.g. Lanah;->e(Lamfk;Lamfc;)V)
+// YouTube 20.47+ 2-param navigation handler
+// 20.47: e.g. Lanah;->e(Lamfk;Lamfc;)V
+// 20.51: e.g. Lanew;->e(Lamiz;Lamir;)V
 // Very specific: PlaybackStartDescriptor + TextUtils.equals + 2 params
 internal object NavigationFingerprintV2 : Fingerprint(
     returnType = "V",
