@@ -8,8 +8,8 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLa
 import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patches.all.misc.packagename.changePackageNamePatch
 import app.morphe.patches.fxexplorer.shared.Constants.COMPATIBILITY_FX_EXPLORER
+import app.morphe.patches.fxexplorer.shared.changeFxPackageNamePatch
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 
@@ -49,9 +49,9 @@ val preserveFilterPatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_FX_EXPLORER)
 
-    // Change package name so the patched app can be installed alongside
-    // the original FX Explorer without requiring uninstall.
-    dependsOn(changePackageNamePatch)
+    // Change package name and update all manifest references so the patched
+    // app can be installed alongside the original FX Explorer.
+    dependsOn(changeFxPackageNamePatch)
 
     execute {
         DirectoryRefreshFingerprint.method.apply {
