@@ -5,12 +5,18 @@
 package app.morphe.patches.fxexplorer.interaction.filter
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
+import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.patch.resourcePatch
+import app.morphe.patches.all.misc.packagename.changePackageNamePatch
+import app.morphe.patches.all.misc.packagename.setOrGetFallbackPackageName
 import app.morphe.patches.fxexplorer.shared.Constants.COMPATIBILITY_FX_EXPLORER
-import app.morphe.patches.fxexplorer.shared.changeFxPackageNamePatch
+import app.morphe.patches.fxexplorer.shared.Constants.ORIGINAL_SIGNATURE_HEX
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 
 /**
@@ -39,6 +45,12 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  * This ensures the filter persists through directory refreshes, whether
  * triggered by returning from a file view, pull-to-refresh, or any other
  * refresh mechanism.
+ *
+ * Additionally, this patch:
+ * - Changes the package name (default: nextapp.fx.morphe) so the patched app
+ *   can be installed alongside the original.
+ * - Spoofs the original signing certificate during license verification so the
+ *   FX Plus License Key app (nextapp.fx.rk) is still recognized.
  */
 @Suppress("unused")
 val preserveFilterPatch = bytecodePatch(
@@ -49,10 +61,136 @@ val preserveFilterPatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_FX_EXPLORER)
 
-    // Change package name and update all manifest references so the patched
-    // app can be installed alongside the original FX Explorer.
-    dependsOn(changeFxPackageNamePatch)
+    dependsOn(changePackageNamePatch)
 
+    // Inline resource patch that changes the package name and updates all manifest
+    // references so the patched app can be installed alongside the original.
+    // Uses setOrGetFallbackPackageName to coordinate with the universal
+    // "Change package name" patch: if the user sets a custom package name,
+    // that name is used; otherwise the default "nextapp.fx.morphe" is applied.
+    dependsOn(
+        resourcePatch {
+            execute {
+                val fromPackage = "nextapp.fx"
+                val toPackage = setOrGetFallbackPackageName("$fromPackage.morphe")
+
+                val transformations = mapOf(
+                    // Change package attribute
+                    "package=\"$fromPackage\"" to "package=\"$toPackage\"",
+
+                    // Remove sharedUserId — ties the app to a specific signing certificate.
+                    // Must be removed because the patched APK uses a different certificate.
+                    "android:sharedUserId=\"$fromPackage\"" to "",
+
+                    // Update provider authorities
+                    "android:authorities=\"$fromPackage." to "android:authorities=\"$toPackage.",
+
+                    // Update permissions
+                    "$fromPackage.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" to
+                        "$toPackage.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+
+                    // Update intent action names
+                    "android:name=\"$fromPackage.intent." to "android:name=\"$toPackage.intent.",
+
+                    // Update scheme references
+                    "android:scheme=\"$fromPackage\"" to "android:scheme=\"$toPackage\"",
+
+                    // Update taskAffinity references
+                    "android:taskAffinity=\"$fromPackage." to "android:taskAffinity=\"$toPackage.",
+                )
+
+                val manifest = get("AndroidManifest.xml")
+                manifest.writeText(
+                    transformations.entries.fold(manifest.readText()) { acc, (from, to) ->
+                        acc.replace(from, to)
+                    },
+                )
+            }
+        }
+    )
+
+    // Inline bytecode patch that spoofs the original signing certificate during
+    // the FX Plus License Key verification. The license check (lh/n.l) compares
+    // the signature of nextapp.fx.rk with the app's own signature. Since the
+    // patched app is signed with a different certificate, the comparison fails.
+    // This patch replaces the self-signature with the original one so the
+    // comparison succeeds and the legitimate license key is recognized.
+    dependsOn(
+        bytecodePatch {
+            execute {
+                LicenseCheckFingerprint.method.apply {
+                    // Find the second getPackageInfo call — the one that queries the
+                    // app's own package name (for signature comparison against the key app).
+                    //
+                    // The pattern in lh/n.l() is:
+                    //   const-string v0, "nextapp.fx.rk"
+                    //   invoke-virtual {v3, v0, v4}, PackageManager;->getPackageInfo(...)  // key app
+                    //   move-result-object v0
+                    //   invoke-virtual {p0}, Context;->getPackageName()
+                    //   move-result-object p0
+                    //   invoke-virtual {v3, p0, v4}, PackageManager;->getPackageInfo(...)  // SELF ← target
+                    //   move-result-object p0  ← p0 now holds our own PackageInfo
+
+                    var getPackageInfoCount = 0
+                    val selfPkgInfoIndex = implementation!!.instructions.indexOfFirst {
+                        if (it.opcode == Opcode.INVOKE_VIRTUAL &&
+                            it is ReferenceInstruction &&
+                            it.reference.toString().contains("PackageManager;->getPackageInfo")
+                        ) {
+                            getPackageInfoCount++
+                            getPackageInfoCount == 2 // Second call = self package query
+                        } else {
+                            false
+                        }
+                    }
+
+                    if (selfPkgInfoIndex == -1) {
+                        throw PatchException(
+                            "Could not find the self getPackageInfo call in license check method. " +
+                                "The APK version may not be supported."
+                        )
+                    }
+
+                    // The move-result-object follows the invoke-virtual
+                    val moveResultIndex = selfPkgInfoIndex + 1
+                    val moveResultInstruction = getInstruction<OneRegisterInstruction>(moveResultIndex)
+                    val pkgInfoRegister = moveResultInstruction.registerA
+
+                    // After move-result-object, inject code to replace the signatures
+                    // in the PackageInfo with the original FX Explorer certificate.
+                    //
+                    // This creates a new Signature from the hex-encoded original certificate,
+                    // wraps it in an array, and assigns it to PackageInfo.signatures.
+                    //
+                    // Available registers: method has .locals 11, and at this point v2-v10 are
+                    // free (v0=key app pkgInfo, v1=1, v3=PackageManager reused, v4=0x40, v5+=loop vars).
+                    // We use v2, v3, v4 which are about to be reassigned in the signature loop.
+                    addInstructions(
+                        moveResultIndex + 1,
+                        """
+                            # Create Signature from original certificate hex
+                            new-instance v2, Landroid/content/pm/Signature;
+                            const-string v3, "$ORIGINAL_SIGNATURE_HEX"
+                            invoke-direct {v2, v3}, Landroid/content/pm/Signature;-><init>(Ljava/lang/String;)V
+
+                            # Create new Signature[1] array
+                            const/4 v3, 0x1
+                            new-array v3, v3, [Landroid/content/pm/Signature;
+
+                            # Store the original signature in the array
+                            const/4 v4, 0x0
+                            aput-object v2, v3, v4
+
+                            # Replace PackageInfo.signatures with our spoofed one
+                            iput-object v3, v$pkgInfoRegister, Landroid/content/pm/PackageInfo;->signatures:[Landroid/content/pm/Signature;
+                        """
+                    )
+                }
+            }
+        }
+    )
+
+    // Main bytecode patch: preserve filter on directory refresh
     execute {
         DirectoryRefreshFingerprint.method.apply {
             // Find the V0() call that unconditionally clears the filter.
@@ -73,10 +211,7 @@ val preserveFilterPatch = bytecodePatch(
                 )
             }
 
-            // L0() has .locals 8, so v0-v7 are available.
-            // v0 is free at this point (it's first used after V0() for Handler access).
-            //
-            // We replace the unconditional V0() call with a conditional one:
+            // Replace the unconditional V0() call with a conditional one:
             //   iget-object v0, p0, Llf/s;->g2:Ljava/lang/String;   // Load filter text
             //   if-nez v0, :skip_clear                                 // If filter active, skip clear
             //   invoke-virtual {p0}, Llf/s;->V0()V                    // Clear filter (only when no filter)

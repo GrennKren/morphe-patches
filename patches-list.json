@@ -5804,7 +5804,9 @@
       "description": "Preserves the active file filter when returning from viewing a file or when the directory refreshes. Normally, the filter is cleared every time the directory refreshes, which is inconvenient when opening files to view them and then returning to the filtered list.",
       "default": true,
       "dependencies": [
-        "ResourcePatch"
+        "ResourcePatch",
+        "ResourcePatch",
+        "BytecodePatch"
       ],
       "compatiblePackages": [
         {
