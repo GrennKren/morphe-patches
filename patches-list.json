@@ -5206,6 +5206,33 @@
       "options": []
     },
     {
+      "name": "Open files externally",
+      "description": "Adds missing MIME types for .md, .yaml, .toml and other file extensions, so files with these extensions can be opened directly with external applications instead of showing the 'Open As' dialog.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Open links directly",
       "description": "Adds an option to skip over redirection URLs in external links.",
       "default": true,
