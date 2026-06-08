@@ -11,6 +11,7 @@ import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patches.fxexplorer.shared.Constants.COMPATIBILITY_FX_EXPLORER
 import app.morphe.util.findFreeRegister
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 
 /**
@@ -58,23 +59,23 @@ val openExternallyPatch = bytecodePatch(
                 )
             }
 
-            // Find ANY Map.put() call to determine the map register.
+            // Find ANY AbstractMap.put() call to determine the map register.
+            // APK uses invoke-virtual with AbstractMap;->put, NOT invoke-interface with Map;->put
             val anyPutIndex = implementation!!.instructions.indexOfFirst {
-                it.opcode == Opcode.INVOKE_INTERFACE &&
+                it.opcode == Opcode.INVOKE_VIRTUAL &&
                     it is ReferenceInstruction &&
-                    it.reference.toString().contains("Map;->put")
+                    it.reference.toString().contains("AbstractMap;->put")
             }
 
             if (anyPutIndex == -1) {
-                throw PatchException("Could not find any Map.put() call in MIME map initializer.")
+                throw PatchException("Could not find any AbstractMap.put() call in MIME map initializer.")
             }
 
-            // Parse the register from the Map.put() instruction text
-            // Format: invoke-interface {v5, v6, v7}, Ljava/util/Map;->put(...)
-            val putInstrText = getInstruction<Any>(anyPutIndex).toString()
-            val regMatch = Regex("""\{v(\d+)""").find(putInstrText)
-            val mapRegister = regMatch?.groupValues?.get(1)?.toInt()
-                ?: throw PatchException("Could not determine map register from: $putInstrText")
+            // Read the map register directly from the AbstractMap.put() instruction.
+            // For invoke-virtual {v1, v2, v3}, registerC = v1 (the map object).
+            // Using FiveRegisterInstruction.registerC is reliable — toString() returns
+            // "BuilderInstruction35c@hash" which cannot be parsed with regex.
+            val mapRegister = getInstruction<FiveRegisterInstruction>(anyPutIndex).registerC
 
             // Get free registers for key and value strings
             // The <clinit> has 49 registers, and the map is likely in a low register.
@@ -82,26 +83,17 @@ val openExternallyPatch = bytecodePatch(
             val keyReg = findFreeRegister(unmodifiableMapIndex, mapRegister)
             val valReg = findFreeRegister(unmodifiableMapIndex, mapRegister, keyReg)
 
-            // Additional MIME types to inject
+            // Additional MIME types to inject (only extensions NOT already in the original map)
+            // Original map already has: json, xml, ini, conf, sh, bat, rs, dart, log, csv
             val additionalMimeTypes = listOf(
                 "md" to "text/markdown",
                 "markdown" to "text/markdown",
                 "yaml" to "text/yaml",
                 "yml" to "text/yaml",
                 "toml" to "application/toml",
-                "json" to "application/json",
-                "xml" to "application/xml",
-                "ini" to "text/plain",
-                "conf" to "text/plain",
                 "cfg" to "text/plain",
-                "sh" to "text/x-shellscript",
-                "bat" to "text/x-bat",
                 "ps1" to "text/plain",
-                "rs" to "text/rust",
-                "go" to "text/go",
-                "dart" to "text/dart",
-                "log" to "text/plain",
-                "csv" to "text/csv",
+                "go" to "text/plain",
                 "tsv" to "text/tab-separated-values",
             )
 
@@ -110,7 +102,7 @@ val openExternallyPatch = bytecodePatch(
                 listOf(
                     "const-string v$keyReg, \"$ext\"",
                     "const-string v$valReg, \"$mime\"",
-                    "invoke-interface {v$mapRegister, v$keyReg, v$valReg}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
+                    "invoke-virtual {v$mapRegister, v$keyReg, v$valReg}, Ljava/util/AbstractMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;",
                 )
             }.joinToString("\n")
 

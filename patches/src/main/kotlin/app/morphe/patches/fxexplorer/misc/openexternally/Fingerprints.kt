@@ -12,15 +12,22 @@ import com.android.tools.smali.dexlib2.AccessFlags
  * calls before the unmodifiableMap call to add missing MIME types.
  *
  * Key identifiers from APK decompilation:
- * - Static method (<clinit>) with 49 registers
+ * - Static constructor (<clinit>) — access flags: STATIC | CONSTRUCTOR only (NO PUBLIC)
+ * - 49 registers, no parameters, returns void
  * - Calls Collections.unmodifiableMap()
- * - Contains many Map.put() calls for extension-to-MIME mapping
+ * - Contains many AbstractMap.put() calls for extension-to-MIME mapping
+ * - Contains unique string constants like "asm", "awk", "xslt", "cxx"
  * - Field Lab/k;->b stores the resulting Map
+ *
+ * IMPORTANT: <clinit> does NOT have the PUBLIC access flag (0x10008 = STATIC|CONSTRUCTOR).
+ * Using definingClass = "Lab/k;" narrows the search to this specific class.
  */
 internal object MimeMapInitFingerprint : Fingerprint(
+    definingClass = "Lab/k;",
     returnType = "V",
-    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC, AccessFlags.CONSTRUCTOR),
+    accessFlags = listOf(AccessFlags.STATIC, AccessFlags.CONSTRUCTOR),
     parameters = listOf(),
+    strings = listOf("asm", "awk", "xslt"),
     filters = listOf(
         methodCall(
             definingClass = "Ljava/util/Collections;",
