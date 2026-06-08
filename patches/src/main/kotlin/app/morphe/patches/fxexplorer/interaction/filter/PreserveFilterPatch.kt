@@ -41,15 +41,31 @@ private const val EXTENSION_CLASS =
  * Uses a FilterCache extension class (HashMap<String, String>) to store
  * filter text keyed by directory path, plus a lastPath tracker.
  *
+ * CRITICAL INSIGHT about getPathText() vs getDirectory():
+ * - getPathText() reads from field i2 (Lkh/d), which is updated ASYNCHRONOUSLY
+ *   by the directory loading task (Llf/i). When L0() runs, i2 still holds
+ *   the PREVIOUSLY LOADED directory — NOT the new one the user navigated to.
+ * - getDirectory() reads from the content model (getContentModel().Y), which
+ *   IS updated BEFORE L0() runs. So getDirectory() correctly returns the NEW
+ *   directory path during L0() execution.
+ *
+ * This means:
+ * - getPathText() = OLD directory path (for saving the current filter)
+ * - getDirectory() = NEW directory path (for cache lookup and setLastPath)
+ *
  * When L0() (directory refresh) runs:
- * 1. BEFORE V0(): Save current filter (g2) for the PREVIOUS directory (lastPath).
- *    This correctly associates the filter with the old directory, because by the
- *    time L0() runs, the fragment has already switched to the new directory.
- *    Also save the current path as lastPath for the next call.
+ * 1. BEFORE V0(): Save current filter (g2) for the OLD directory.
+ *    getPathText() returns the old path because i2 hasn't been updated yet.
+ *    Then get the NEW directory from getDirectory() and store it as lastPath.
  * 2. V0() runs normally (clears filter for new directory).
- * 3. AFTER V0(): Check if the current directory has a cached filter and restore it.
- *    Restoration uses W0() + EditText.setText() to ensure both the filter logic
- *    and the visible search text are updated correctly.
+ * 3. AFTER V0(): Use getLastPath() (which now holds the NEW directory path)
+ *    to check the cache and restore the filter if found.
+ *
+ * Why we need getDirectory() conversion to String:
+ * getPathText() already does this conversion internally (checking if the
+ * directory is Lkh/d0; → call d(), otherwise → getPath().n(context)),
+ * but it uses i2 which is stale. We replicate the same conversion logic
+ * starting from getDirectory() instead.
  *
  * Key insight about W0() and EditText:
  * W0(filterText, null) applies the filter but clears the EditText when the
@@ -164,24 +180,25 @@ val preserveFilterPatch = bytecodePatch(
             //   invoke-virtual {p0}, Llf/s;->V0()V   // unconditional clear
             //
             // We replace this with:
-            //   invoke-static {}, FilterCache->getLastPath()       // previous dir path
-            //   move-result-object v0
-            //   iget-object v1, p0, Llf/s;->g2                    // current filter text
-            //   invoke-static {v0, v1}, FilterCache->saveFilter    // save for old dir
-            //   invoke-virtual {p0}, Llf/s;->getPathText()         // current (new) path
-            //   move-result-object v0
-            //   invoke-static {v0}, FilterCache->setLastPath       // save for next call
-            //   invoke-virtual {p0}, Llf/s;->V0()V                 // always clear
+            //   Step A: Save current filter (g2) for the OLD directory.
+            //     getPathText() uses i2 which is STALE (points to old directory),
+            //     so it gives us the correct key for saving the current filter.
+            //   Step B: Get NEW directory path from getDirectory() (content model)
+            //     and convert it to a String. This replicates the same logic as
+            //     getPathText() but starts from getDirectory() instead of i2.
+            //     Store as lastPath so Modification 2 can look it up.
+            //   Step C: Call V0() to clear the filter.
             //
-            // Key: We use getLastPath() for the save key because by the time L0() runs,
-            // the fragment has already switched directories. getPathText() returns the NEW
-            // path, but g2 belongs to the OLD directory (lastPath).
+            // Conversion logic (same as getPathText() but from getDirectory()):
+            //   if (directory instanceof Lkh/d0;) → call d() for String
+            //   else → call getPath() → Lhh/f; → f.n(context) for String
             //
-            // When g2 is null (no filter), saveFilter removes the cache entry for that path,
-            // which correctly handles the case where the user manually cleared the filter.
+            // Null check: if getDirectory() returns null, skip setLastPath but
+            // still call V0(). L0() itself returns early when getDirectory() is
+            // null, so this is an edge case that shouldn't normally happen.
             //
-            // Injected: 8 instructions (no trailing nop needed — no labels in this block).
-            // Original V0() shifts to v0CallIndex + 8.
+            // Injected: 21 instructions.
+            // Original V0() shifts to v0CallIndex + 21.
 
             val v0CallIndex = implementation!!.instructions.indexOfFirst {
                 it.opcode == Opcode.INVOKE_VIRTUAL &&
@@ -199,54 +216,65 @@ val preserveFilterPatch = bytecodePatch(
             addInstructionsWithLabels(
                 v0CallIndex,
                 """
-                    invoke-static {}, $EXTENSION_CLASS->getLastPath()Ljava/lang/String;
+                    # Step A: Save filter for OLD directory (i2 = old path)
+                    invoke-virtual {p0}, Llf/s;->getPathText()Ljava/lang/String;
                     move-result-object v0
                     iget-object v1, p0, Llf/s;->g2:Ljava/lang/String;
                     invoke-static {v0, v1}, $EXTENSION_CLASS->saveFilter(Ljava/lang/String;Ljava/lang/String;)V
-                    invoke-virtual {p0}, Llf/s;->getPathText()Ljava/lang/String;
+
+                    # Step B: Get NEW directory path from content model
+                    invoke-virtual {p0}, Llf/s;->getDirectory()Lkh/d;
                     move-result-object v0
+                    if-nez v0, :dir_not_null
+
+                    # getDirectory() is null — skip setLastPath, just clear filter
+                    goto :do_clear
+
+                    :dir_not_null
+                    # Convert Lkh/d; to path string (same logic as getPathText)
+                    instance-of v1, v0, Lkh/d0;
+                    if-eqz v1, :not_d0
+                    check-cast v0, Lkh/d0;
+                    invoke-interface {v0}, Lkh/d0;->d()Ljava/lang/String;
+                    move-result-object v0
+                    goto :got_new_path
+
+                    :not_d0
+                    invoke-interface {v0}, Lkh/j;->getPath()Lhh/f;
+                    move-result-object v0
+                    iget-object v1, p0, Lnextapp/fx/ui/content/u;->activity:Lnextapp/fx/ui/content/k;
+                    invoke-virtual {v0, v1}, Lhh/f;->n(Landroid/content/Context;)Ljava/lang/String;
+                    move-result-object v0
+
+                    :got_new_path
                     invoke-static {v0}, $EXTENSION_CLASS->setLastPath(Ljava/lang/String;)V
+
+                    # Step C: Always clear filter
+                    :do_clear
                     invoke-virtual {p0}, Llf/s;->V0()V
                 """
             )
 
-            // Remove original V0() call (shifted by 8 injected instructions)
-            removeInstruction(v0CallIndex + 8)
+            // Remove original V0() call (shifted by 21 injected instructions)
+            removeInstruction(v0CallIndex + 21)
 
             // === MODIFICATION 2: After V0() — restore cached filter ===
             //
-            // Injected right after the injected V0() (before original L0() code continues):
+            // Uses getLastPath() which now holds the NEW directory path
+            // (set in Modification 1 Step B via getDirectory()).
             //
-            //   invoke-virtual {p0}, Llf/s;->getPathText()       // current dir path
-            //   move-result-object v0
-            //   invoke-static {v0}, FilterCache->getFilter        // check cache
-            //   move-result-object v1                              // cached filter or null
-            //   if-eqz v1, :no_cached_filter
-            //   const/4 v0, 0x0                                    // null for hf/n callback
-            //   invoke-virtual {p0, v1, v0}, Llf/s;->W0          // apply filter
-            //   iget-object v0, p0, Llf/s;->o2                    // filter UI (Lhf/l0)
-            //   iget-object v0, v0, Lhf/l0;->X1                   // EditText widget
-            //   invoke-virtual {v0, v1}, EditText;->setText       // fix empty text bug
-            //   :no_cached_filter
-            //   nop
+            // Why getLastPath() instead of getPathText():
+            // getPathText() uses i2 which is still the OLD directory at this point
+            // (i2 is only updated asynchronously after the directory load completes).
+            // getLastPath() was set from getDirectory() which correctly returns
+            // the NEW directory path.
             //
-            // Register safety: v0 and v1 are free — the next original instruction
-            // (iget-object v0, v8, Llf/s;->a2) overwrites both.
-            //
-            // Why EditText.setText() is needed:
-            // W0() has a "b2" (initialized) flag. When b2 is false (reset by V0()),
-            // W0() clears the EditText to "". Setting b2=true before W0() would skip
-            // the clear but also skip keyboard show + label update. Instead, we call
-            // W0() normally (which applies the filter correctly) and then fix the
-            // EditText text with setText(). The setText() triggers TextWatcher →
-            // W0(text, o2.f) which is harmless (j() early-exits since B4 is already set).
-            //
-            // Injected: 10 instructions.
+            // Injected: 11 instructions.
 
             addInstructionsWithLabels(
-                v0CallIndex + 8,
+                v0CallIndex + 21,
                 """
-                    invoke-virtual {p0}, Llf/s;->getPathText()Ljava/lang/String;
+                    invoke-static {}, $EXTENSION_CLASS->getLastPath()Ljava/lang/String;
                     move-result-object v0
                     invoke-static {v0}, $EXTENSION_CLASS->getFilter(Ljava/lang/String;)Ljava/lang/String;
                     move-result-object v1
