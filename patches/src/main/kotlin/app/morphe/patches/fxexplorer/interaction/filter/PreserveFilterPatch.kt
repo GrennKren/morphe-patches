@@ -23,23 +23,22 @@ private const val EXTENSION_CLASS =
     "Lapp/morphe/extension/fxexplorer/FilterCache;"
 
 /**
- * Patch to implement per-directory filter persistence for FX Explorer.
+ * Patch to implement per-directory, per-tab filter persistence for FX Explorer.
  *
  * Problem:
  * 1. When navigating into a subdirectory, the active filter from the parent
  *    directory remains active, filtering items in the subdirectory too.
  * 2. When returning to the parent directory, the filter was cleared entirely
  *    by V0(), losing the filter state.
- *
- * Desired behavior:
- * - /storage/download (filter "folder_1" active) → shows folder_1, folder_13
- * - Navigate INTO /storage/download/folder_1 → filter OFF (show all items)
- * - Navigate BACK to /storage/download → filter "folder_1" RESTORED
- * - Open a file (image) in /storage/download → return → filter still active
+ * 3. Different tabs viewing the same directory should have independent filter state.
+ * 4. Filter state should survive app restart.
  *
  * Solution:
- * Uses a FilterCache extension class (HashMap<String, String>) to store
- * filter text keyed by directory path, plus a lastPath tracker.
+ * Uses a FilterCache extension class with:
+ * - In-memory HashMap keyed by composite key (tabHash + ":" + pathString) for
+ *   per-tab, per-directory isolation during runtime.
+ * - SharedPreferences with path-only keys for cross-restart persistence.
+ * - Per-tab lastPath tracking via HashMap<Integer, String> (tabHash → lastPath).
  *
  * CRITICAL INSIGHT about getPathText() vs getDirectory():
  * - getPathText() reads from field i2 (Lkh/d), which is updated ASYNCHRONOUSLY
@@ -49,23 +48,32 @@ private const val EXTENSION_CLASS =
  *   IS updated BEFORE L0() runs. So getDirectory() correctly returns the NEW
  *   directory path during L0() execution.
  *
- * This means:
- * - getPathText() = OLD directory path (for saving the current filter)
- * - getDirectory() = NEW directory path (for cache lookup and setLastPath)
+ * Cache key consistency:
+ * Both save and restore use the SAME composite key format built from
+ * getDirectory() conversion + tabHash. The save key comes from getLastPath(tabHash)
+ * which was set from getDirectory() conversion in the previous L0() call.
+ * This guarantees no key mismatch between save and restore operations.
+ *
+ * Tab awareness:
+ * - Each tab (WindowModel instance, class c1) is identified by
+ *   System.identityHashCode(getWindowModel()).
+ * - This hash is stable within a JVM session but changes on app restart.
+ * - SharedPreferences fallback (path-only key) handles cross-restart persistence.
  *
  * When L0() (directory refresh) runs:
- * 1. BEFORE V0(): Save current filter (g2) for the OLD directory.
- *    getPathText() returns the old path because i2 hasn't been updated yet.
- *    Then get the NEW directory from getDirectory() and store it as lastPath.
- * 2. V0() runs normally (clears filter for new directory).
- * 3. AFTER V0(): Use getLastPath() (which now holds the NEW directory path)
- *    to check the cache and restore the filter if found.
- *
- * Why we need getDirectory() conversion to String:
- * getPathText() already does this conversion internally (checking if the
- * directory is Lkh/d0; → call d(), otherwise → getPath().n(context)),
- * but it uses i2 which is stale. We replicate the same conversion logic
- * starting from getDirectory() instead.
+ * 1. Init FilterCache with Context (no-op after first call).
+ * 2. Get tabHash = identityHashCode(getWindowModel()).
+ * 3. BEFORE V0(): Save current filter (g2) for the previous directory of this tab.
+ *    saveFilter(tabHash, getLastPath(tabHash), g2)
+ *    The key is from lastPath which was set by getDirectory() conversion in the
+ *    previous L0() — same format as the restore lookup.
+ * 4. Get NEW directory path from getDirectory() and convert to String
+ *    (replicating getPathText() logic: instanceof Lkh/d0; → d(),
+ *     else → getPath().n(context)).
+ *    Store as setLastPath(tabHash, newPath) for this tab.
+ * 5. V0() runs normally (clears filter for new directory).
+ * 6. AFTER V0(): Check cache for the new directory of this tab.
+ *    getFilter(tabHash, getLastPath(tabHash)) → restore if found.
  *
  * Key insight about W0() and EditText:
  * W0(filterText, null) applies the filter but clears the EditText when the
@@ -83,9 +91,10 @@ private const val EXTENSION_CLASS =
 @Suppress("unused")
 val preserveFilterPatch = bytecodePatch(
     name = "Preserve filter on refresh",
-    description = "Implements per-directory filter persistence. " +
+    description = "Implements per-directory, per-tab filter persistence. " +
         "When navigating into a subdirectory, the filter is cleared. " +
         "When returning to the parent directory, the previous filter is restored. " +
+        "Filter state is isolated between tabs and persists across app restarts. " +
         "Also enables side-by-side installation.",
 ) {
     compatibleWith(COMPATIBILITY_FX_EXPLORER)
@@ -171,23 +180,24 @@ val preserveFilterPatch = bytecodePatch(
         }
     )
 
-    // Main bytecode patch: per-directory filter persistence
+    // Main bytecode patch: per-directory, per-tab filter persistence
     execute {
         DirectoryRefreshFingerprint.method.apply {
-            // === MODIFICATION 1: Before V0() — save filter for old directory ===
+            // === MODIFICATION 1: Before V0() — save filter + set new lastPath ===
             //
             // Original L0() at v0CallIndex:
             //   invoke-virtual {p0}, Llf/s;->V0()V   // unconditional clear
             //
             // We replace this with:
-            //   Step A: Save current filter (g2) for the OLD directory.
-            //     getPathText() uses i2 which is STALE (points to old directory),
-            //     so it gives us the correct key for saving the current filter.
-            //   Step B: Get NEW directory path from getDirectory() (content model)
-            //     and convert it to a String. This replicates the same logic as
-            //     getPathText() but starts from getDirectory() instead of i2.
-            //     Store as lastPath so Modification 2 can look it up.
-            //   Step C: Call V0() to clear the filter.
+            //   Step A: Init FilterCache with Context (no-op after first call).
+            //   Step B: Get tabHash = identityHashCode(getWindowModel()).
+            //   Step C: Save current filter (g2) for the previous directory of this tab.
+            //     saveFilter(tabHash, getLastPath(tabHash), g2)
+            //     The key is from lastPath which was set by getDirectory() conversion
+            //     in the previous L0() call — same format as the restore lookup.
+            //   Step D: Get NEW directory path from getDirectory() (content model)
+            //     and convert it to a String. Store as lastPath for this tab.
+            //   Step E: Call V0() to clear the filter.
             //
             // Conversion logic (same as getPathText() but from getDirectory()):
             //   if (directory instanceof Lkh/d0;) → call d() for String
@@ -197,8 +207,11 @@ val preserveFilterPatch = bytecodePatch(
             // still call V0(). L0() itself returns early when getDirectory() is
             // null, so this is an edge case that shouldn't normally happen.
             //
-            // Injected: 21 instructions.
-            // Original V0() shifts to v0CallIndex + 21.
+            // Register usage: v0 (tabHash int, reused), v1 (path string), v2 (temp)
+            // All are safe — subsequent original code overwrites v0, v1 immediately.
+            //
+            // Injected: 27 instructions.
+            // Original V0() shifts to v0CallIndex + 27.
 
             val v0CallIndex = implementation!!.instructions.indexOfFirst {
                 it.opcode == Opcode.INVOKE_VIRTUAL &&
@@ -216,67 +229,81 @@ val preserveFilterPatch = bytecodePatch(
             addInstructionsWithLabels(
                 v0CallIndex,
                 """
-                    # Step A: Save filter for OLD directory (i2 = old path)
-                    invoke-virtual {p0}, Llf/s;->getPathText()Ljava/lang/String;
-                    move-result-object v0
-                    iget-object v1, p0, Llf/s;->g2:Ljava/lang/String;
-                    invoke-static {v0, v1}, $EXTENSION_CLASS->saveFilter(Ljava/lang/String;Ljava/lang/String;)V
+                    # Step A: Init FilterCache with Context (no-op after first call)
+                    iget-object v0, p0, Lnextapp/fx/ui/content/u;->activity:Lnextapp/fx/ui/content/k;
+                    invoke-static {v0}, $EXTENSION_CLASS->init(Landroid/content/Context;)V
 
-                    # Step B: Get NEW directory path from content model
-                    invoke-virtual {p0}, Llf/s;->getDirectory()Lkh/d;
+                    # Step B: Get tabHash = identityHashCode(getWindowModel())
+                    invoke-virtual {p0}, Lnextapp/fx/ui/content/u;->getWindowModel()Lnextapp/fx/ui/content/c1;
                     move-result-object v0
-                    if-nez v0, :dir_not_null
+                    invoke-static {v0}, Ljava/lang/System;->identityHashCode(Ljava/lang/Object;)I
+                    move-result v0
+
+                    # Step C: saveFilter(tabHash, getLastPath(tabHash), g2)
+                    invoke-static {v0}, $EXTENSION_CLASS->getLastPath(I)Ljava/lang/String;
+                    move-result-object v1
+                    iget-object v2, p0, Llf/s;->g2:Ljava/lang/String;
+                    invoke-static {v0, v1, v2}, $EXTENSION_CLASS->saveFilter(ILjava/lang/String;Ljava/lang/String;)V
+
+                    # Step D: Get NEW directory path from content model
+                    invoke-virtual {p0}, Llf/s;->getDirectory()Lkh/d;
+                    move-result-object v1
+                    if-nez v1, :dir_not_null
 
                     # getDirectory() is null — skip setLastPath, just clear filter
                     goto :do_clear
 
                     :dir_not_null
                     # Convert Lkh/d; to path string (same logic as getPathText)
-                    instance-of v1, v0, Lkh/d0;
-                    if-eqz v1, :not_d0
-                    check-cast v0, Lkh/d0;
-                    invoke-interface {v0}, Lkh/d0;->d()Ljava/lang/String;
-                    move-result-object v0
+                    instance-of v2, v1, Lkh/d0;
+                    if-eqz v2, :not_d0
+                    check-cast v1, Lkh/d0;
+                    invoke-interface {v1}, Lkh/d0;->d()Ljava/lang/String;
+                    move-result-object v1
                     goto :got_new_path
 
                     :not_d0
-                    invoke-interface {v0}, Lkh/j;->getPath()Lhh/f;
-                    move-result-object v0
-                    iget-object v1, p0, Lnextapp/fx/ui/content/u;->activity:Lnextapp/fx/ui/content/k;
-                    invoke-virtual {v0, v1}, Lhh/f;->n(Landroid/content/Context;)Ljava/lang/String;
-                    move-result-object v0
+                    invoke-interface {v1}, Lkh/j;->getPath()Lhh/f;
+                    move-result-object v1
+                    iget-object v2, p0, Lnextapp/fx/ui/content/u;->activity:Lnextapp/fx/ui/content/k;
+                    invoke-virtual {v1, v2}, Lhh/f;->n(Landroid/content/Context;)Ljava/lang/String;
+                    move-result-object v1
 
                     :got_new_path
-                    invoke-static {v0}, $EXTENSION_CLASS->setLastPath(Ljava/lang/String;)V
+                    invoke-static {v0, v1}, $EXTENSION_CLASS->setLastPath(ILjava/lang/String;)V
 
-                    # Step C: Always clear filter
+                    # Step E: Always clear filter
                     :do_clear
                     invoke-virtual {p0}, Llf/s;->V0()V
                 """
             )
 
-            // Remove original V0() call (shifted by 21 injected instructions)
-            removeInstruction(v0CallIndex + 21)
+            // Remove original V0() call (shifted by 27 injected instructions)
+            removeInstruction(v0CallIndex + 27)
 
             // === MODIFICATION 2: After V0() — restore cached filter ===
             //
-            // Uses getLastPath() which now holds the NEW directory path
-            // (set in Modification 1 Step B via getDirectory()).
+            // Uses getLastPath(tabHash) which holds the NEW directory path for this tab
+            // (set in Modification 1 Step D via getDirectory() conversion).
             //
-            // Why getLastPath() instead of getPathText():
-            // getPathText() uses i2 which is still the OLD directory at this point
-            // (i2 is only updated asynchronously after the directory load completes).
-            // getLastPath() was set from getDirectory() which correctly returns
-            // the NEW directory path.
+            // getFilter checks in-memory first (tab-specific composite key),
+            // then falls back to SharedPreferences (path-only key) for persistence.
             //
-            // Injected: 11 instructions.
+            // Injected: 15 instructions.
 
             addInstructionsWithLabels(
-                v0CallIndex + 21,
+                v0CallIndex + 27,
                 """
-                    invoke-static {}, $EXTENSION_CLASS->getLastPath()Ljava/lang/String;
+                    # Get tabHash for current tab
+                    invoke-virtual {p0}, Lnextapp/fx/ui/content/u;->getWindowModel()Lnextapp/fx/ui/content/c1;
                     move-result-object v0
-                    invoke-static {v0}, $EXTENSION_CLASS->getFilter(Ljava/lang/String;)Ljava/lang/String;
+                    invoke-static {v0}, Ljava/lang/System;->identityHashCode(Ljava/lang/Object;)I
+                    move-result v0
+
+                    # Check cache for new directory: getFilter(tabHash, getLastPath(tabHash))
+                    invoke-static {v0}, $EXTENSION_CLASS->getLastPath(I)Ljava/lang/String;
+                    move-result-object v1
+                    invoke-static {v0, v1}, $EXTENSION_CLASS->getFilter(ILjava/lang/String;)Ljava/lang/String;
                     move-result-object v1
                     if-eqz v1, :no_cached_filter
                     const/4 v0, 0x0

@@ -5828,7 +5828,7 @@
     },
     {
       "name": "Preserve filter on refresh",
-      "description": "Implements per-directory filter persistence. When navigating into a subdirectory, the filter is cleared. When returning to the parent directory, the previous filter is restored. Also enables side-by-side installation.",
+      "description": "Implements per-directory, per-tab filter persistence. When navigating into a subdirectory, the filter is cleared. When returning to the parent directory, the previous filter is restored. Filter state is isolated between tabs and persists across app restarts. Also enables side-by-side installation.",
       "default": true,
       "dependencies": [
         "ResourcePatch",
