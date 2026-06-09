@@ -309,8 +309,17 @@ val preserveFilterPatch = bytecodePatch(
                     const/4 v0, 0x0
                     invoke-virtual {p0, v1, v0}, Llf/s;->W0(Ljava/lang/String;Lhf/n;)V
                     iget-object v0, p0, Llf/s;->o2:Lhf/l0;
-                    iget-object v0, v0, Lhf/l0;->X1:Landroid/widget/EditText;
-                    invoke-virtual {v0, v1}, Landroid/widget/EditText;->setText(Ljava/lang/CharSequence;)V
+                    iget-object v2, v0, Lhf/l0;->X1:Landroid/widget/EditText;
+                    invoke-virtual {v2, v1}, Landroid/widget/EditText;->setText(Ljava/lang/CharSequence;)V
+
+                    # Prevent keyboard from appearing on auto-restore
+                    invoke-virtual {v2}, Landroid/view/View;->clearFocus()V
+                    iget-object v1, v0, Lhf/l0;->a2:Landroid/view/inputmethod/InputMethodManager;
+                    invoke-virtual {v2}, Landroid/view/View;->getWindowToken()Landroid/os/IBinder;
+                    move-result-object v2
+                    const/4 v0, 0x0
+                    invoke-virtual {v1, v2, v0}, Landroid/view/inputmethod/InputMethodManager;->hideSoftInputFromWindow(Landroid/os/IBinder;I)Z
+
                     :no_cached_filter
                     nop
                 """
