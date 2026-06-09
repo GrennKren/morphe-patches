@@ -289,7 +289,15 @@ val preserveFilterPatch = bytecodePatch(
             // getFilter checks in-memory first (tab-specific composite key),
             // then falls back to SharedPreferences (path-only key) for persistence.
             //
-            // Injected: 15 instructions.
+            // Keyboard prevention (termux technique):
+            // 1. BEFORE setText(): Set SOFT_INPUT_STATE_ALWAYS_HIDDEN (0x3) on the window
+            //    so the framework cannot auto-show keyboard when EditText gains focus
+            // 2. setText() runs — keyboard stays hidden because window flag blocks it
+            // 3. clearFocus() + hideSoftInputFromWindow() — explicitly dismiss
+            // 4. AFTER: Restore SOFT_INPUT_STATE_HIDDEN (0x2) — the original mode
+            //    so keyboard works normally when user taps EditText manually
+            //
+            // Injected: 25 instructions.
 
             addInstructionsWithLabels(
                 v0CallIndex + 27,
@@ -306,19 +314,36 @@ val preserveFilterPatch = bytecodePatch(
                     invoke-static {v0, v1}, $EXTENSION_CLASS->getFilter(ILjava/lang/String;)Ljava/lang/String;
                     move-result-object v1
                     if-eqz v1, :no_cached_filter
+
+                    # BEFORE setText: Set SOFT_INPUT_STATE_ALWAYS_HIDDEN on window
+                    # to prevent keyboard from auto-showing when EditText gains focus
+                    iget-object v0, p0, Lnextapp/fx/ui/content/u;->activity:Lnextapp/fx/ui/content/k;
+                    invoke-virtual {v0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+                    move-result-object v0
+                    const/16 v2, 0x3
+                    invoke-virtual {v0, v2}, Landroid/view/Window;->setSoftInputMode(I)V
+
+                    # Apply filter and set text
                     const/4 v0, 0x0
                     invoke-virtual {p0, v1, v0}, Llf/s;->W0(Ljava/lang/String;Lhf/n;)V
                     iget-object v0, p0, Llf/s;->o2:Lhf/l0;
                     iget-object v2, v0, Lhf/l0;->X1:Landroid/widget/EditText;
                     invoke-virtual {v2, v1}, Landroid/widget/EditText;->setText(Ljava/lang/CharSequence;)V
 
-                    # Prevent keyboard from appearing on auto-restore
+                    # Prevent keyboard: clearFocus + hideSoftInputFromWindow
                     invoke-virtual {v2}, Landroid/view/View;->clearFocus()V
                     iget-object v1, v0, Lhf/l0;->a2:Landroid/view/inputmethod/InputMethodManager;
                     invoke-virtual {v2}, Landroid/view/View;->getWindowToken()Landroid/os/IBinder;
                     move-result-object v2
                     const/4 v0, 0x0
                     invoke-virtual {v1, v2, v0}, Landroid/view/inputmethod/InputMethodManager;->hideSoftInputFromWindow(Landroid/os/IBinder;I)Z
+
+                    # AFTER: Restore original SOFT_INPUT_STATE_HIDDEN (0x2)
+                    iget-object v0, p0, Lnextapp/fx/ui/content/u;->activity:Lnextapp/fx/ui/content/k;
+                    invoke-virtual {v0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
+                    move-result-object v0
+                    const/16 v1, 0x2
+                    invoke-virtual {v0, v1}, Landroid/view/Window;->setSoftInputMode(I)V
 
                     :no_cached_filter
                     nop
