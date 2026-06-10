@@ -11,19 +11,15 @@ import hf.y0;
 /**
  * Click listener for the "Open With Default" button in the "Open With" dialog.
  *
- * When clicked, this listener sets the MIME type override to the wildcard
- * MIME type on the parent y0 dialog and triggers i() to re-resolve apps with
- * the wildcard MIME type. This is the same behavior as clicking the
- * wildcard button in the "Open As" dialog, but directly accessible from
- * the "Open With" dialog without needing to navigate to "Open As" first.
+ * When clicked, this listener:
+ * 1. Checks if there's a stored default app for the current file's extension
+ * 2. If found -> opens the file directly with that app (dismisses dialog)
+ * 3. If not found -> sets selectingDefault=true, sets MIME to wildcard type,
+ *    and re-resolves apps, showing ALL apps that can open any file type.
+ *    The next app the user picks will be saved as the default.
  *
- * The flow mirrors the existing "Open As" handler in Laf/g case 0x13:
- *   1. Set y0.e2 = wildcard MIME string
- *   2. Call y0.i() to re-resolve with the new MIME type
- *
- * Unlike the "Open As" handler, we do NOT dismiss a z0 dialog because
- * this listener is attached directly to a button in the y0 dialog itself.
- * The y0.i() call will clear and rebuild the y0 dialog content.
+ * This class is SAFE - all exceptions are caught in DefaultAppRegistry methods,
+ * so it will never crash the host app.
  */
 @SuppressWarnings("unused")
 public class OpenWithDefaultClickListener implements View.OnClickListener {
@@ -41,9 +37,15 @@ public class OpenWithDefaultClickListener implements View.OnClickListener {
 
     @Override
     public void onClick(View v) {
-        // Set MIME type override to wildcard - same as clicking wildcard in "Open As"
+        // First, try to open with a stored default app
+        if (DefaultAppRegistry.tryOpenWithDefault(dialog)) {
+            // Default app found and launched — dialog is already dismissed
+            return;
+        }
+
+        // No default stored — set selecting mode and re-resolve with wildcard
+        DefaultAppRegistry.setSelectingDefault(true);
         dialog.e2 = "*/*";
-        // Re-resolve apps with the new MIME type - clears and rebuilds the dialog
         dialog.i();
     }
 }

@@ -37,42 +37,18 @@ internal object MimeMapInitFingerprint : Fingerprint(
 )
 
 /**
- * Fingerprint for the file open dialog method in Lhf/y0;.
- *
- * This is the j() method that creates and shows the "Open With" dialog.
- * From APK analysis: j(Landroid/content/Context; Lkh/e; Llf/b;)V
- * It creates a new hf/y0 dialog instance and posts it via Handler.
- *
- * The patch replaces the dialog-showing flow with direct external app launch.
- */
-internal object FileOpenDialogFingerprint : Fingerprint(
-    returnType = "V",
-    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
-    parameters = listOf("Landroid/content/Context;", "Lkh/e;", "Llf/b;"),
-    filters = listOf(
-        methodCall(
-            definingClass = "Lhf/y0;",
-            name = "<init>",
-        ),
-    ),
-)
-
-/**
  * Fingerprint for the external app launch method in Lhf/y0;.
  *
  * From APK analysis: h(Landroid/content/pm/ResolveInfo; Landroid/net/Uri; I)V
- * This method creates an ACTION_VIEW intent, sets the data URI and MIME type,
- * sets the component from ResolveInfo, adds flags, and starts the activity.
- * It's the method that actually launches an external app.
+ * This is an instance method (PUBLIC FINAL) that creates an ACTION_VIEW intent,
+ * sets the data URI and MIME type, sets the component from ResolveInfo, adds flags,
+ * and starts the activity. It's the method that actually launches an external app.
  *
- * Key pattern:
- *   new-instance Intent
- *   const-string "android.intent.action.VIEW"
- *   invoke-direct Intent-><init>(String)V
- *   ... setData or setDataAndType ...
- *   ... setClassName ...
- *   ... addFlags ...
- *   invoke-static Lyd/a;->l(Context,Intent,int)Z  (startActivity wrapper)
+ * The patch hooks this method to intercept app launches and save the selected
+ * app as the default when the "selecting default" flag is set.
+ *
+ * Injection: Single invoke-static at method start. No labels, no branches.
+ * Safe: The extension method catches all exceptions internally.
  */
 internal object ExternalLaunchFingerprint : Fingerprint(
     returnType = "V",

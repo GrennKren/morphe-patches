@@ -28,21 +28,18 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  *
  * Part 2 — "Open With Default" section in "Open With" dialog:
  * Adds a new section at the top of the "Open With" dialog containing a single
- * wildcard MIME type button. When clicked, it sets the MIME type override to
- * the wildcard type and re-resolves available apps, effectively showing ALL
- * apps that can open any file type. This is the same behavior as clicking the
- * wildcard button in the "Open As" dialog, but directly accessible without
- * navigating to "Open As" first.
+ * wildcard MIME type button. When clicked, it checks for a stored default app
+ * for the current file's extension. If a default is found, the file opens
+ * directly without any dialog. If no default is stored, the dialog re-resolves
+ * with the wildcard MIME type to show ALL apps, and the selected app is saved
+ * as the default for that extension.
  *
- * Implementation details for Part 2:
- * - Target method: Lhf/w0;.run()V (the dialog populator Runnable)
- * - Injection point: After the header is added (d2=null, header added to layout)
- *   and before the resolver results (Lqe/a; fields) are read
- * - The injection adds:
- *   1. A section header via y0.f("Open With Default")
- *   2. A grid item button via y0.e(label, icon, null, clickListener)
- *   3. The click listener is OpenWithDefaultClickListener from the extension,
- *      which sets y0.e2 = wildcard MIME and calls y0.i() to re-resolve
+ * Part 3 — Intercept app launches to save defaults:
+ * Hooks y0.h(ResolveInfo, Uri, int) — the method that launches an app.
+ * When the "selectingDefault" flag is set (after clicking the wildcard button),
+ * saves the launched app as the default for the current file's extension.
+ * This injection is simple (one invoke-static) and uses no labels or branches,
+ * making it safe and crash-proof.
  */
 @Suppress("unused")
 val openExternallyPatch = bytecodePatch(
@@ -50,7 +47,8 @@ val openExternallyPatch = bytecodePatch(
     description = "Adds missing MIME types for .md, .yaml, .toml and other file extensions, " +
         "so files with these extensions can be opened directly with external applications " +
         "instead of showing the 'Open As' dialog. Also adds an 'Open With Default' section " +
-        "to the 'Open With' dialog with a wildcard MIME type button.",
+        "to the 'Open With' dialog with a wildcard MIME type button that remembers your " +
+        "app choice per file extension.",
 ) {
     compatibleWith(COMPATIBILITY_FX_EXPLORER)
 
@@ -118,23 +116,6 @@ val openExternallyPatch = bytecodePatch(
         // Part 2: Add "Open With Default" section to "Open With" dialog
         // ============================================================
         DialogPopulatorFingerprint.method.apply {
-            // Find the injection point: the line where d2 is set to null
-            // after the header is built, and the header LinearLayout is added to the main layout.
-            //
-            // In the smali, this is:
-            //   iput-object v1, v0, Lhf/y0;->d2:Lgh/g;   (d2 = null, v1 = null)
-            //   invoke-virtual {v4, v8}, Landroid/view/ViewGroup;->addView(...)V   (add header)
-            //   iget-object v1, v2, Lqe/a;->b:Ljava/util/List;   ← WE INJECT BEFORE THIS
-            //
-            // At this point:
-            //   v0 = Lhf/y0; (the dialog)
-            //   v4 = Landroid/widget/LinearLayout; (main content layout i)
-            //   v5 = Resources
-            //   v6 = Context
-            //   v7 = Lqe/d; (resolver data)
-            //   v8 = just used for header LinearLayout, now free
-            //   v1 = null (just set to null for d2)
-
             val qeAFieldBIndex = implementation!!.instructions.indexOfFirst {
                 it.opcode == Opcode.IGET_OBJECT &&
                     it is ReferenceInstruction &&
@@ -148,43 +129,7 @@ val openExternallyPatch = bytecodePatch(
                 )
             }
 
-            // We inject right before the first qe/a field access.
-            // At this point v0 = y0 (dialog), and we can safely use v1, v8
-            // (they were just set/used and will be overwritten by subsequent code).
-            //
-            // The injection adds:
-            // 1. Section header: y0.f("Open With Default")
-            // 2. Click listener: new OpenWithDefaultClickListener(y0)
-            // 3. Grid item button: y0.e("*/*", null_icon, null, clickListener)
-            //
-            // We use the extension class OpenWithDefaultClickListener which is
-            // compiled into the extension .mpe and available at runtime.
-            // It implements View.OnClickListener and on click:
-            //   - Sets y0.e2 = wildcard MIME string
-            //   - Calls y0.i() to re-resolve with the new MIME type
-
             val EXTENSION_CLASS = "Lapp/morphe/extension/fxexplorer/OpenWithDefaultClickListener;"
-
-            // Register usage at injection point (before iget-object v1, v2, Lqe/a;->b):
-            // v0 = Lhf/y0; (the dialog) — MUST preserve
-            // v1 = null (just set for d2) — safe to overwrite
-            // v8 = header LinearLayout (just used for addView) — safe to overwrite
-            //
-            // Strategy: We need 5 registers for the invoke-virtual call to y0.e().
-            // The method signature is: e(CharSequence, Drawable, qe/b, OnClickListener)V
-            // We need: v0=y0, v1=label, v2=null(drawable), v3=null(qe/b), v4=listener
-            //
-            // But v2 is LIVE (holds qe/a) — we must save and restore it.
-            // v3 might be live from the e2!=null path — we must save and restore it.
-            // v4 is LIVE (holds LinearLayout) — we must save and restore it.
-            //
-            // Simpler approach: Use invoke-virtual/range which allows us to specify
-            // non-consecutive register ranges. But it actually requires consecutive regs.
-            //
-            // Best approach: Use registers that are truly free at this point.
-            // v1 and v8 are safe. We need 3 more for the 5-arg invoke.
-            // Save v2, v3, v4 to higher registers (v21, v22 are free), use v1-v4,
-            // then restore v2, v3, v4 after the call.
 
             addInstructions(
                 qeAFieldBIndex,
@@ -215,6 +160,30 @@ val openExternallyPatch = bytecodePatch(
                     # Restore saved registers
                     move-object/from16 v2, v21
                     move-object/from16 v4, v22
+                """,
+            )
+        }
+
+        // ============================================================
+        // Part 3: Intercept app launches to save defaults
+        // ============================================================
+        // Hook y0.h(ResolveInfo, Uri, int) — when an app is launched from
+        // the "Open With" dialog, check if selectingDefault flag is set.
+        // If true, save the launched app as the default for the file's extension.
+        //
+        // This is a MINIMAL injection: just one invoke-static call at method start.
+        // No labels, no branches, no register conflicts.
+        // p0 = this (y0 dialog), p1 = ResolveInfo
+        // The extension method catches all exceptions internally.
+        ExternalLaunchFingerprint.method.apply {
+            val REGISTRY_CLASS = "Lapp/morphe/extension/fxexplorer/DefaultAppRegistry;"
+
+            addInstructions(
+                0,
+                """
+                    # Check if we should save this app as default, and save if so
+                    # This is safe: DefaultAppRegistry.onAppLaunchedFromDialog catches all exceptions
+                    invoke-static {p0, p1}, $REGISTRY_CLASS->onAppLaunchedFromDialog(Lhf/y0;Landroid/content/pm/ResolveInfo;)V
                 """,
             )
         }
