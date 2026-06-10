@@ -289,15 +289,20 @@ val preserveFilterPatch = bytecodePatch(
             // getFilter checks in-memory first (tab-specific composite key),
             // then falls back to SharedPreferences (path-only key) for persistence.
             //
-            // Keyboard prevention (termux technique):
-            // 1. BEFORE setText(): Set SOFT_INPUT_STATE_ALWAYS_HIDDEN (0x3) on the window
+            // Keyboard prevention strategy:
+            // 1. Set SOFT_INPUT_STATE_ALWAYS_HIDDEN (0x3) on the window
             //    so the framework cannot auto-show keyboard when EditText gains focus
-            // 2. setText() runs — keyboard stays hidden because window flag blocks it
-            // 3. clearFocus() + hideSoftInputFromWindow() — explicitly dismiss
-            // 4. AFTER: Restore SOFT_INPUT_STATE_HIDDEN (0x2) — the original mode
-            //    so keyboard works normally when user taps EditText manually
+            // 2. Set b2=true BEFORE calling W0() — this is the KEY FIX:
+            //    W0() checks b2: if false → shows keyboard + clears EditText + requestFocus
+            //    If true → skips all of that. By setting b2=true before W0(),
+            //    the auto-restore will NOT trigger keyboard show.
+            //    V0() still resets b2=false normally, so when user explicitly
+            //    taps the Filter button, b2==false → keyboard shows properly.
+            // 3. After W0(), setText(filterText) shows the filter text in EditText
+            // 4. clearFocus() + hideSoftInputFromWindow() — cleanup
+            // 5. Restore SOFT_INPUT_STATE_HIDDEN (0x2) — original mode
             //
-            // Injected: 25 instructions.
+            // Injected: 28 instructions.
 
             addInstructionsWithLabels(
                 v0CallIndex + 27,
@@ -322,6 +327,16 @@ val preserveFilterPatch = bytecodePatch(
                     move-result-object v0
                     const/16 v2, 0x3
                     invoke-virtual {v0, v2}, Landroid/view/Window;->setSoftInputMode(I)V
+
+                    # KEY FIX: Set b2=true BEFORE calling W0() to prevent keyboard flash.
+                    # W0() checks b2: if false → shows keyboard + clears EditText.
+                    # If true → skips keyboard entirely. By setting b2=true here,
+                    # W0() will skip requestFocus() + showSoftInput() during auto-restore.
+                    # V0() still resets b2=false normally, so when user explicitly
+                    # taps Filter button, b2==false → keyboard shows properly.
+                    iget-object v0, p0, Llf/s;->o2:Lhf/l0;
+                    const/4 v2, 0x1
+                    iput-boolean v2, v0, Lhf/l0;->b2:Z
 
                     # Apply filter and set text
                     const/4 v0, 0x0
