@@ -3,6 +3,7 @@ import com.android.build.api.dsl.ApplicationExtension
 dependencies {
     compileOnly(project(":extensions:shared:library"))
     compileOnly(libs.morphe.extensions.library)
+    compileOnly(project(":extensions:fxexplorer:stub"))
 }
 
 configure<ApplicationExtension> {

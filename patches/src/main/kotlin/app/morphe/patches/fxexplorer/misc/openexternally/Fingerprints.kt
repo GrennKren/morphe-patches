@@ -80,3 +80,43 @@ internal object ExternalLaunchFingerprint : Fingerprint(
     parameters = listOf("Landroid/content/pm/ResolveInfo;", "Landroid/net/Uri;", "I"),
     strings = listOf("android.intent.action.VIEW"),
 )
+
+/**
+ * Fingerprint for the dialog populator Runnable in Lhf/w0;.
+ *
+ * This is the run() method that populates the "Open With" dialog after
+ * app resolution completes. The pswitch case 0 handles the main dialog
+ * population flow (adding headers, sections, and app items).
+ *
+ * Key identifiers from APK decompilation:
+ * - Public final method returning void with no parameters
+ * - Implements Runnable (called via Handler.post)
+ * - Checks Lhf/w0;->f (case selector) via packed-switch
+ * - Case 0 (pswitch_1c) is the main dialog populator
+ * - Contains unique string "download" (used for icon key)
+ * - Contains unique string "package_android_root"
+ * - Accesses Lhf/y0;->e2 (MIME type override field)
+ * - Calls Lhf/y0;->b(I)V to add section separators
+ * - Calls Lhf/y0;->e(...)V to add grid items
+ * - Calls Lqe/a;-><init>(Lqe/d;Ljava/lang/String;Z)V for resolver results
+ *
+ * The patch injects an "Open With Default" section before the existing
+ * sections, containing a single button that sets MIME type override to
+ * wildcard and re-resolves apps.
+ */
+internal object DialogPopulatorFingerprint : Fingerprint(
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
+    parameters = listOf(),
+    strings = listOf("package_android_root"),
+    filters = listOf(
+        methodCall(
+            definingClass = "Lhf/y0;",
+            name = "b",
+        ),
+        methodCall(
+            definingClass = "Lhf/y0;",
+            name = "e",
+        ),
+    ),
+)

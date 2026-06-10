@@ -5207,7 +5207,7 @@
     },
     {
       "name": "Open files externally",
-      "description": "Adds missing MIME types for .md, .yaml, .toml and other file extensions, so files with these extensions can be opened directly with external applications instead of showing the 'Open As' dialog.",
+      "description": "Adds missing MIME types for .md, .yaml, .toml and other file extensions, so files with these extensions can be opened directly with external applications instead of showing the 'Open As' dialog. Also adds an 'Open With Default' section to the 'Open With' dialog with a wildcard MIME type button.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
