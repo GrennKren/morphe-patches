@@ -31,13 +31,15 @@ private const val EXTENSION_CLASS =
  * 2. When returning to the parent directory, the filter was cleared entirely
  *    by V0(), losing the filter state.
  * 3. Different tabs viewing the same directory should have independent filter state.
- * 4. Filter state should survive app restart.
+ * 4. Filter state should persist within the current app session.
  *
  * Solution:
  * Uses a FilterCache extension class with:
  * - In-memory HashMap keyed by composite key (tabHash + ":" + pathString) for
  *   per-tab, per-directory isolation during runtime.
- * - SharedPreferences with path-only keys for cross-restart persistence.
+ * - Cache is in-memory only — automatically cleared on app process restart.
+ *   This prevents stale data from causing crashes when the filter bar (o2)
+ *   has not been created yet in a new session.
  * - Per-tab lastPath tracking via HashMap<Integer, String> (tabHash → lastPath).
  *
  * CRITICAL INSIGHT about getPathText() vs getDirectory():
@@ -58,7 +60,7 @@ private const val EXTENSION_CLASS =
  * - Each tab (WindowModel instance, class c1) is identified by
  *   System.identityHashCode(getWindowModel()).
  * - This hash is stable within a JVM session but changes on app restart.
- * - SharedPreferences fallback (path-only key) handles cross-restart persistence.
+ * - In-memory only cache means no stale data survives restart.
  *
  * When L0() (directory refresh) runs:
  * 1. Init FilterCache with Context (no-op after first call).
@@ -76,11 +78,21 @@ private const val EXTENSION_CLASS =
  *    getFilter(tabHash, getLastPath(tabHash)) → restore if found.
  *
  * Key insight about W0() and EditText:
- * W0(filterText, null) applies the filter but clears the EditText when the
- * "initialized" flag (b2) is false (which it is after V0() resets it).
- * The fix: after W0(), call EditText.setText(filterText) to show the text.
- * This triggers the TextWatcher → W0(text, o2.f) which is harmless since
- * the adapter filter is already applied (j() early-exits).
+ * W0(filterText, null) applies the filter. When b2==false (first time / after V0()),
+ * W0() clears EditText text, requests focus, and shows the keyboard.
+ * When b2==true, W0() skips all UI initialization (no clear, no focus, no keyboard).
+ *
+ * Keyboard prevention strategy for auto-restore:
+ * 1. Check o2 (filter bar) is not null — if null, skip restore entirely.
+ *    o2 can be null if the filter bar was never created in this session
+ *    (e.g., app just restarted with no in-memory cache data).
+ * 2. Set b2=true BEFORE calling W0() — prevents keyboard show during restore.
+ * 3. After W0(), call EditText.setText(filterText) to display the filter text.
+ * 4. clearFocus() + hideSoftInputFromWindow() — ensure keyboard is hidden.
+ * 5. Reset b2=false AFTER restore — so next manual Filter tap shows keyboard.
+ *    Without this reset, b2 stays true and W0() would skip keyboard show
+ *    even when the user explicitly taps the Filter button.
+ * 6. Restore SOFT_INPUT_STATE_HIDDEN (0x2) — original window soft input mode.
  *
  * Additionally, this patch:
  * - Changes the package name (default: nextapp.fx.morphe) so the patched app
@@ -94,7 +106,7 @@ val preserveFilterPatch = bytecodePatch(
     description = "Implements per-directory, per-tab filter persistence. " +
         "When navigating into a subdirectory, the filter is cleared. " +
         "When returning to the parent directory, the previous filter is restored. " +
-        "Filter state is isolated between tabs and persists across app restarts. " +
+        "Filter state is isolated between tabs (in-memory only, cleared on restart). " +
         "Also enables side-by-side installation.",
 ) {
     compatibleWith(COMPATIBILITY_FX_EXPLORER)
@@ -286,23 +298,26 @@ val preserveFilterPatch = bytecodePatch(
             // Uses getLastPath(tabHash) which holds the NEW directory path for this tab
             // (set in Modification 1 Step D via getDirectory() conversion).
             //
-            // getFilter checks in-memory first (tab-specific composite key),
-            // then falls back to SharedPreferences (path-only key) for persistence.
+            // getFilter checks in-memory cache only (tab-specific composite key).
+            // Cache is empty on app restart, preventing stale data crashes.
             //
             // Keyboard prevention strategy:
-            // 1. Set SOFT_INPUT_STATE_ALWAYS_HIDDEN (0x3) on the window
-            //    so the framework cannot auto-show keyboard when EditText gains focus
-            // 2. Set b2=true BEFORE calling W0() — this is the KEY FIX:
-            //    W0() checks b2: if false → shows keyboard + clears EditText + requestFocus
-            //    If true → skips all of that. By setting b2=true before W0(),
+            // 1. Check o2 (filter bar) is not null — if null, skip restore entirely.
+            //    o2 can be null if the filter bar was never created in this session.
+            //    With in-memory-only cache, this shouldn't happen normally (filter
+            //    can only be cached if o2 was previously created), but we check
+            //    defensively to prevent NullPointerException.
+            // 2. Set SOFT_INPUT_STATE_ALWAYS_HIDDEN (0x3) on the window
+            // 3. Set b2=true BEFORE calling W0() — W0() checks b2:
+            //    if false → shows keyboard + clears EditText + requestFocus
+            //    if true → skips all of that. By setting b2=true before W0(),
             //    the auto-restore will NOT trigger keyboard show.
-            //    V0() still resets b2=false normally, so when user explicitly
-            //    taps the Filter button, b2==false → keyboard shows properly.
-            // 3. After W0(), setText(filterText) shows the filter text in EditText
-            // 4. clearFocus() + hideSoftInputFromWindow() — cleanup
-            // 5. Restore SOFT_INPUT_STATE_HIDDEN (0x2) — original mode
-            //
-            // Injected: 28 instructions.
+            // 4. After W0(), setText(filterText) shows the filter text in EditText
+            // 5. clearFocus() + hideSoftInputFromWindow() — ensure keyboard hidden
+            // 6. Reset b2=false AFTER restore — so next manual Filter tap shows
+            //    keyboard. Without this, b2 stays true and W0() would skip
+            //    keyboard show even on explicit user tap.
+            // 7. Restore SOFT_INPUT_STATE_HIDDEN (0x2) — original mode
 
             addInstructionsWithLabels(
                 v0CallIndex + 27,
@@ -318,34 +333,37 @@ val preserveFilterPatch = bytecodePatch(
                     move-result-object v1
                     invoke-static {v0, v1}, $EXTENSION_CLASS->getFilter(ILjava/lang/String;)Ljava/lang/String;
                     move-result-object v1
-                    if-eqz v1, :no_cached_filter
+                    if-eqz v1, :skip_restore
 
-                    # BEFORE setText: Set SOFT_INPUT_STATE_ALWAYS_HIDDEN on window
-                    # to prevent keyboard from auto-showing when EditText gains focus
+                    # Null check: o2 (filter bar) must exist before we can set b2 or restore
+                    # o2 is null if the filter bar was never created in this session.
+                    # With in-memory-only cache, this is a defensive check.
+                    iget-object v2, p0, Llf/s;->o2:Lhf/l0;
+                    if-eqz v2, :skip_restore
+
+                    # Set SOFT_INPUT_STATE_ALWAYS_HIDDEN on window
                     iget-object v0, p0, Lnextapp/fx/ui/content/u;->activity:Lnextapp/fx/ui/content/k;
                     invoke-virtual {v0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
                     move-result-object v0
-                    const/16 v2, 0x3
-                    invoke-virtual {v0, v2}, Landroid/view/Window;->setSoftInputMode(I)V
+                    const/16 v3, 0x3
+                    invoke-virtual {v0, v3}, Landroid/view/Window;->setSoftInputMode(I)V
 
-                    # KEY FIX: Set b2=true BEFORE calling W0() to prevent keyboard flash.
+                    # Set b2=true BEFORE calling W0() to prevent keyboard flash.
                     # W0() checks b2: if false → shows keyboard + clears EditText.
-                    # If true → skips keyboard entirely. By setting b2=true here,
-                    # W0() will skip requestFocus() + showSoftInput() during auto-restore.
-                    # V0() still resets b2=false normally, so when user explicitly
-                    # taps Filter button, b2==false → keyboard shows properly.
-                    iget-object v0, p0, Llf/s;->o2:Lhf/l0;
-                    const/4 v2, 0x1
-                    iput-boolean v2, v0, Lhf/l0;->b2:Z
+                    # If true → skips keyboard entirely. v2 still holds o2 from null check.
+                    const/4 v0, 0x1
+                    iput-boolean v0, v2, Lhf/l0;->b2:Z
 
-                    # Apply filter and set text
+                    # Apply filter
                     const/4 v0, 0x0
                     invoke-virtual {p0, v1, v0}, Llf/s;->W0(Ljava/lang/String;Lhf/n;)V
+
+                    # Set filter text in EditText
                     iget-object v0, p0, Llf/s;->o2:Lhf/l0;
                     iget-object v2, v0, Lhf/l0;->X1:Landroid/widget/EditText;
                     invoke-virtual {v2, v1}, Landroid/widget/EditText;->setText(Ljava/lang/CharSequence;)V
 
-                    # Prevent keyboard: clearFocus + hideSoftInputFromWindow
+                    # Ensure keyboard hidden: clearFocus + hideSoftInputFromWindow
                     invoke-virtual {v2}, Landroid/view/View;->clearFocus()V
                     iget-object v1, v0, Lhf/l0;->a2:Landroid/view/inputmethod/InputMethodManager;
                     invoke-virtual {v2}, Landroid/view/View;->getWindowToken()Landroid/os/IBinder;
@@ -353,14 +371,21 @@ val preserveFilterPatch = bytecodePatch(
                     const/4 v0, 0x0
                     invoke-virtual {v1, v2, v0}, Landroid/view/inputmethod/InputMethodManager;->hideSoftInputFromWindow(Landroid/os/IBinder;I)Z
 
-                    # AFTER: Restore original SOFT_INPUT_STATE_HIDDEN (0x2)
+                    # Reset b2=false so next manual Filter tap shows keyboard properly.
+                    # Without this, b2 stays true and W0() would skip keyboard show
+                    # even when the user explicitly taps the Filter button.
+                    iget-object v0, p0, Llf/s;->o2:Lhf/l0;
+                    const/4 v1, 0x0
+                    iput-boolean v1, v0, Lhf/l0;->b2:Z
+
+                    # Restore original SOFT_INPUT_STATE_HIDDEN (0x2)
                     iget-object v0, p0, Lnextapp/fx/ui/content/u;->activity:Lnextapp/fx/ui/content/k;
                     invoke-virtual {v0}, Landroid/app/Activity;->getWindow()Landroid/view/Window;
                     move-result-object v0
                     const/16 v1, 0x2
                     invoke-virtual {v0, v1}, Landroid/view/Window;->setSoftInputMode(I)V
 
-                    :no_cached_filter
+                    :skip_restore
                     nop
                 """
             )
