@@ -183,6 +183,85 @@ public class DefaultAppRegistry {
     }
 
     /**
+     * Try to open a file directly with its stored default app, BEFORE
+     * the "Open With" dialog is created. Called from the smali injection
+     * in y0.j() (FileOpenDialogFingerprint hook).
+     *
+     * This method is SAFE - all exceptions are caught, it will never crash
+     * the host app. If anything fails, it returns false and the normal
+     * dialog flow proceeds.
+     *
+     * IMPORTANT DESIGN DECISION: This method takes only String parameters,
+     * NOT kh/e. The smali injection code extracts filename and file path
+     * by calling interface methods DIRECTLY in smali, then passes the
+     * resulting strings to this method. This completely avoids ALL
+     * descriptor mismatch issues because:
+     * 1. The smali code runs inside the APK — it calls interface methods
+     *    using the exact descriptors that exist in the DEX
+     * 2. Our Java method only uses standard types (String, Context) which
+     *    can never have descriptor mismatches
+     * 3. Previously, calling fileItem.w() from Java compiled as
+     *    invoke-interface Lkh/j;->w() (wrong! w() is in kh/e, not kh/j)
+     *    → NoSuchMethodError → tryOpenDirectly always returned false!
+     *
+     * MIME type is derived from the file extension using Android's
+     * MimeTypeMap, so we don't need to call p1.w() at all. This also
+     * reduces the number of registers needed in the smali injection.
+     *
+     * @param filename  The file's name (from p1.getName() in smali)
+     * @param pathStr   The file's path string (from p1.getPath().toString() in smali)
+     * @param ctx       The Android context (p0 parameter in y0.j)
+     * @return true if the file was opened with a stored default app, false otherwise
+     */
+    public static boolean tryOpenDirectly(String filename, String pathStr, Context ctx) {
+        if (ctx == null || filename == null || pathStr == null) return false;
+        try {
+            String ext = getFileExtension(filename);
+            if (ext == null) return false;
+
+            String[] defaultApp = getDefault(ctx, ext);
+            if (defaultApp == null) return false;
+
+            String packageName = defaultApp[0];
+            String className = defaultApp[1];
+
+            // Ensure the path is absolute (hh/f.toString() may not include leading '/')
+            if (!pathStr.startsWith("/")) {
+                pathStr = "/" + pathStr;
+            }
+
+            if (pathStr.isEmpty()) return false;
+
+            File file = new File(pathStr);
+            if (!file.exists()) return false;
+
+            Uri uri = nextapp.fx.fileprovider.FileProvider.a(ctx, file);
+            if (uri == null) return false;
+
+            // Derive MIME type from file extension
+            String mimeType = android.webkit.MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(ext);
+
+            // Create ACTION_VIEW intent with the specific component
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            if (mimeType != null && !mimeType.isEmpty()) {
+                intent.setDataAndType(uri, mimeType);
+            } else {
+                intent.setData(uri);
+            }
+            intent.setClassName(packageName, className);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            ctx.startActivity(intent);
+            return true;
+        } catch (Exception ex) {
+            // If anything goes wrong, fall through to normal dialog flow
+            return false;
+        }
+    }
+
+    /**
      * Called from smali injection in y0.h() to save default app when
      * selectingDefault flag is set.
      *

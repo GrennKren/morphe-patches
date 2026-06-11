@@ -37,6 +37,41 @@ internal object MimeMapInitFingerprint : Fingerprint(
 )
 
 /**
+ * Fingerprint for the file open dialog method in Lhf/y0;.
+ *
+ * This is the j() method that creates and shows the "Open With" dialog.
+ * From APK analysis: j(Landroid/content/Context; Lkh/e; Llf/b;)V
+ * It is a PUBLIC STATIC method that creates a new hf/y0 dialog instance
+ * and posts a show-runnable via Handler.postDelayed(100ms).
+ *
+ * The patch hooks this method AFTER the y0 constructor call to check for
+ * a stored default app. At that point, v0 holds the y0 dialog instance
+ * with its resolver (qe/d) fully initialized, providing access to the
+ * correct File/URI for the file. If a default is found, tryOpenWithDefault()
+ * opens the file directly, the dialog is dismissed, and the method returns
+ * early — preventing the show-runnable from being created/posted.
+ *
+ * Injection uses addInstructionsWithLabels for label support.
+ * Original register layout: .locals 2 (v0, v1), p0=Context, p1=kh/e, p2=lf/b
+ * At injection point (after constructor): v0=y0 dialog, v1=0x1 (available)
+ *
+ * The injection simply calls tryOpenWithDefault(y0) which uses the dialog's
+ * resolver to get the proper File/URI — the same proven approach used when
+ * the user clicks the wildcard button in the dialog.
+ */
+internal object FileOpenDialogFingerprint : Fingerprint(
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
+    parameters = listOf("Landroid/content/Context;", "Lkh/e;", "Llf/b;"),
+    filters = listOf(
+        methodCall(
+            definingClass = "Lhf/y0;",
+            name = "<init>",
+        ),
+    ),
+)
+
+/**
  * Fingerprint for the external app launch method in Lhf/y0;.
  *
  * From APK analysis: h(Landroid/content/pm/ResolveInfo; Landroid/net/Uri; I)V
