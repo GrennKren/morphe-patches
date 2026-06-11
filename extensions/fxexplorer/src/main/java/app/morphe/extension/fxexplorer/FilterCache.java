@@ -36,6 +36,18 @@ public class FilterCache {
     private static final HashMap<Integer, String> lastPathMap = new HashMap<>();
 
     /**
+     * Flag indicating that an external app was launched from within FX Explorer.
+     * When the user returns to FX Explorer, onResume() checks this flag.
+     * If true, the directory refresh (R0) is skipped to preserve scroll position,
+     * and the FileObserver is restarted without a full reload.
+     *
+     * This flag is set by DefaultAppRegistry when launching external apps
+     * (tryOpenWithDefault, tryOpenDirectly, onAppLaunchedFromDialog).
+     * It is consumed (read + reset) by the onResume hook in PreserveFilterPatch.
+     */
+    private static boolean wasExternalLaunch = false;
+
+    /**
      * Initialize the cache with a Context.
      * Kept as a no-op for compatibility with existing patch smali that calls init().
      *
@@ -127,5 +139,33 @@ public class FilterCache {
     public static synchronized void clearAll() {
         filterMap.clear();
         lastPathMap.clear();
+    }
+
+    /**
+     * Set the external app launch flag.
+     * Called when FX Explorer launches an external app (via ACTION_VIEW intent).
+     * This informs the onResume hook to skip the directory refresh,
+     * preserving the scroll position when the user returns.
+     *
+     * @param value true if an external app is being launched
+     */
+    public static synchronized void setExternalLaunch(boolean value) {
+        wasExternalLaunch = value;
+    }
+
+    /**
+     * Consume the external app launch flag.
+     * Returns true if an external app was launched (and resets the flag).
+     * This is an atomic consume operation — the flag is cleared after reading.
+     *
+     * Called by the onResume hook in PreserveFilterPatch to decide whether
+     * to skip the directory refresh.
+     *
+     * @return true if returning from an external app launch, false otherwise
+     */
+    public static synchronized boolean consumeExternalLaunch() {
+        boolean result = wasExternalLaunch;
+        wasExternalLaunch = false;
+        return result;
     }
 }

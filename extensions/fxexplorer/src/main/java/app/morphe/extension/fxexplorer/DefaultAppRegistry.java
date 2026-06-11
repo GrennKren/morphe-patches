@@ -245,6 +245,9 @@ public class DefaultAppRegistry {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
+            // Set external launch flag for scroll position preservation
+            FilterCache.setExternalLaunch(true);
+
             ctx.startActivity(intent);
             dialog.dismiss();
             return true;
@@ -325,6 +328,9 @@ public class DefaultAppRegistry {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
+            // Set external launch flag for scroll position preservation
+            FilterCache.setExternalLaunch(true);
+
             ctx.startActivity(intent);
             return true;
         } catch (Exception ex) {
@@ -345,6 +351,12 @@ public class DefaultAppRegistry {
      * @param ri     The ResolveInfo of the launched app (p1 parameter)
      */
     public static void onAppLaunchedFromDialog(y0 dialog, ResolveInfo ri) {
+        // Set external launch flag for scroll position preservation.
+        // This MUST be before the selectingDefault check because we want to
+        // preserve scroll position for ALL external app launches from the
+        // dialog, not just when selecting a default.
+        FilterCache.setExternalLaunch(true);
+
         if (!selectingDefault) return;
         selectingDefault = false;
         if (dialog == null || ri == null || ri.activityInfo == null) return;

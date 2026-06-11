@@ -5855,7 +5855,7 @@
     },
     {
       "name": "Preserve filter on refresh",
-      "description": "Implements per-directory, per-tab filter persistence. When navigating into a subdirectory, the filter is cleared. When returning to the parent directory, the previous filter is restored. Filter state is isolated between tabs (in-memory only, cleared on restart). Also enables side-by-side installation.",
+      "description": "Implements per-directory, per-tab filter persistence and scroll position preservation. When navigating into a subdirectory, the filter is cleared. When returning to the parent directory, the previous filter is restored. Filter state is isolated between tabs (in-memory only, cleared on restart). Scroll position is preserved when returning from viewing a file in an external app (requires the 'Open files externally' patch to be enabled). Also enables side-by-side installation.",
       "default": true,
       "dependencies": [
         "ResourcePatch",

@@ -103,10 +103,12 @@ private const val EXTENSION_CLASS =
 @Suppress("unused")
 val preserveFilterPatch = bytecodePatch(
     name = "Preserve filter on refresh",
-    description = "Implements per-directory, per-tab filter persistence. " +
+    description = "Implements per-directory, per-tab filter persistence and scroll position preservation. " +
         "When navigating into a subdirectory, the filter is cleared. " +
         "When returning to the parent directory, the previous filter is restored. " +
         "Filter state is isolated between tabs (in-memory only, cleared on restart). " +
+        "Scroll position is preserved when returning from viewing a file in an external app " +
+        "(requires the 'Open files externally' patch to be enabled). " +
         "Also enables side-by-side installation.",
 ) {
     compatibleWith(COMPATIBILITY_FX_EXPLORER)
@@ -386,6 +388,78 @@ val preserveFilterPatch = bytecodePatch(
                     invoke-virtual {v0, v1}, Landroid/view/Window;->setSoftInputMode(I)V
 
                     :skip_restore
+                    nop
+                """
+            )
+        }
+
+        // === MODIFICATION 3: Skip directory refresh when returning from external app ===
+        //
+        // Root cause of scroll position loss:
+        // When the user opens a file with an external app, FX Explorer's Activity
+        // goes through onPause → onStop. When the user returns, onResume() fires
+        // and calls R0(true) → L0() which does a FULL directory reload. This
+        // creates a new RecyclerView adapter, destroying the scroll position.
+        //
+        // The existing scroll restoration mechanism (setScrollPosition() after
+        // setAdapter()) doesn't work reliably because of RecyclerView layout pass timing.
+        //
+        // Solution: Skip the refresh entirely when returning from an external app launch.
+        // The FilterCache.wasExternalLaunch flag is set by DefaultAppRegistry when
+        // an external app is launched (tryOpenWithDefault, tryOpenDirectly,
+        // onAppLaunchedFromDialog). When onResume detects this flag, it:
+        // 1. Restarts the FileObserver (which was stopped in onPause)
+        // 2. Updates j2 (lastRefreshTimestamp) to prevent future refreshes
+        // 3. Returns immediately — the RecyclerView is untouched, scroll position is preserved!
+        //
+        // This hook is a no-op if the 'Open files externally' patch is not enabled,
+        // because the wasExternalLaunch flag will never be set.
+        //
+        // FileObserver restart:
+        // - onPause() stops the FileObserver: d2.i.stopWatching()
+        // - Normally, L0() creates a new FileObserver during the loading process
+        // - Since we skip L0(), we manually restart the existing FileObserver
+        // - d2 is Lb2/d; (wrapper), d2.i is the FileObserver (as Object, cast to ec/f)
+        // - We call startWatching() on it to resume monitoring directory changes
+        // - Null checks: d2 might be null (cloud storage dirs), d2.i might be null
+        //
+        // Register usage: v0 (multi-purpose), v1 (multi-purpose)
+        // These are safe to use — the original onResume uses v0-v4, and our code
+        // either returns (preserving no state) or falls through to original code
+        // which overwrites all registers anyway.
+
+        OnResumeFingerprint.method.apply {
+            addInstructionsWithLabels(
+                0,
+                """
+                    # Check if returning from external app launch
+                    invoke-static {}, $EXTENSION_CLASS->consumeExternalLaunch()Z
+                    move-result v0
+                    if-eqz v0, :proceed_normal_refresh
+
+                    # === Returning from external app — skip refresh to preserve scroll position ===
+
+                    # Restart FileObserver if it exists (was stopped in onPause)
+                    # d2 = Lb2/d; wrapper, d2.i = Object (actually ec/f extends FileObserver)
+                    iget-object v0, p0, Llf/s;->d2:Lb2/d;
+                    if-eqz v0, :skip_fo_restart
+                    iget-object v1, v0, Lb2/d;->i:Ljava/lang/Object;
+                    if-eqz v1, :skip_fo_restart
+                    check-cast v1, Landroid/os/FileObserver;
+                    invoke-virtual {v1}, Landroid/os/FileObserver;->startWatching()V
+
+                    :skip_fo_restart
+                    # Update j2 (lastRefreshTimestamp) to current time
+                    # This prevents future onResume from triggering a refresh
+                    invoke-static {}, Ljava/lang/System;->currentTimeMillis()J
+                    move-result-wide v0
+                    iput-wide v0, p0, Llf/s;->j2:J
+
+                    # Return without calling R0() — scroll position is preserved!
+                    return-void
+
+                    :proceed_normal_refresh
+                    # Not returning from external app — original onResume code continues
                     nop
                 """
             )
