@@ -32,3 +32,54 @@ internal object NetworkInfoFingerprint : Fingerprint(
         ),
     ),
 )
+
+/**
+ * Fingerprint for the WiFi state change receiver in SharingService$3.
+ *
+ * This BroadcastReceiver's onReceive() checks if wifi_state == 1 (DISABLED)
+ * and calls stopSelf() to kill the sharing service. When Mobile Hotspot is
+ * active, WiFi client mode is DISABLED (wifi_state=1), causing this receiver
+ * to immediately shut down the Web Access service.
+ *
+ * Key identifiers:
+ * - Inner class of SharingService
+ * - Extends BroadcastReceiver
+ * - References string "wifi_state" and "Shutting down sharing due to Wi-Fi disable."
+ */
+internal object WifiStateReceiverFingerprint : Fingerprint(
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
+    parameters = listOf("Landroid/content/Context;", "Landroid/content/Intent;"),
+    definingClass = "Lnextapp/fx/plus/share/service/SharingService\$3;",
+    strings = listOf("wifi_state", "Shutting down sharing due to Wi-Fi disable."),
+)
+
+/**
+ * Fingerprint for SharingService.onStartCommand().
+ *
+ * This method creates a WifiLock with mode 3 (WIFI_MODE_FULL_HIGH_PERF)
+ * which may fail or cause issues when WiFi is in AP mode (hotspot).
+ * It also registers the WiFi state change receiver unconditionally.
+ *
+ * Key identifiers:
+ * - Public final method returning int
+ * - Parameters: Intent, int, int
+ * - Defining class: SharingService
+ * - References "SharingService: HTTP server not started."
+ * - Calls xa/c.b(Context) for network type detection
+ * - Calls WifiManager.createWifiLock()
+ * - References "android.net.wifi.WIFI_STATE_CHANGED"
+ */
+internal object SharingServiceStartFingerprint : Fingerprint(
+    returnType = "I",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.FINAL),
+    parameters = listOf("Landroid/content/Intent;", "I", "I"),
+    definingClass = "Lnextapp/fx/plus/share/service/SharingService;",
+    strings = listOf("SharingService: HTTP server not started."),
+    filters = listOf(
+        methodCall(
+            definingClass = "Landroid/net/wifi/WifiManager;",
+            name = "createWifiLock",
+        ),
+    ),
+)
