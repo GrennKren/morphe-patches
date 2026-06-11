@@ -49,10 +49,13 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  * directly with that app, skipping the dialog entirely.
  * Uses addInstructionsWithLabels for label support (NOT addInstructions).
  *
- * IMPORTANT: The lf/b parameter (p2) distinguishes between user-initiated
- * "Open With" (p2 == null, from hold-touch → bottom-right button) and
- * automatic file opening (p2 != null, from single-click). When p2 is null,
- * the user explicitly wants the dialog — we must NOT auto-open.
+ * IMPORTANT: The lf/b parameter (p2) is ALWAYS null from all callers —
+ * both single-click "Open" and explicit "Open With" button. It CANNOT be
+ * used to distinguish the two paths. Instead, we use stack trace inspection
+ * via DefaultAppRegistry.shouldAutoOpen() to check if hf.b0 (the file-
+ * opener class) is in the call stack. If it is, we arrived from the
+ * single-click path and should try auto-open. If not, the user explicitly
+ * requested the "Open With" dialog and we must show it.
  */
 @Suppress("unused")
 val openExternallyPatch = bytecodePatch(
@@ -267,15 +270,22 @@ val openExternallyPatch = bytecodePatch(
                 """
                     # ===== Part 4: Try to open with stored default before showing dialog =====
                     # v0 = y0 dialog instance (just constructed, resolver fully initialized)
-                    # v1 = temp register
-                    # p2 = lf/b parameter — null means EXPLICIT "Open With" request
-                    #       (user hold-touched → clicked bottom-right button)
-                    #       In that case, we must show the dialog, NOT auto-open.
+                    # v1 = temp register (available: was set to const/4 v1, 1 at index 1)
+                    #
+                    # CRITICAL: We CANNOT use the lf/b parameter (p2) to distinguish between
+                    # single-click "Open" and explicit "Open With" button because ALL callers
+                    # pass null for lf/b. Instead, we use stack trace inspection via
+                    # DefaultAppRegistry.shouldAutoOpen() to check if hf.b0 is in the call
+                    # stack (present only for single-click path).
 
-                    # Check if this is an explicit "Open With" request (p2 == null)
-                    if-eqz p2, :skip_auto_open
+                    # Check if auto-open should be attempted (stack trace inspection)
+                    invoke-static {}, $REGISTRY_CLASS->shouldAutoOpen()Z
+                    move-result v1
 
-                    # p2 is non-null — this is a single-click file open, try auto-open
+                    # If shouldAutoOpen() returned false, skip auto-open and show dialog
+                    if-eqz v1, :skip_auto_open
+
+                    # shouldAutoOpen() returned true — we're in the single-click "Open" path
                     # Call tryOpenWithDefault(y0 dialog) — this uses the dialog's
                     # resolver (qe/d) which has the correct File/URI for the file.
                     invoke-static {v0}, $REGISTRY_CLASS->tryOpenWithDefault(Lhf/y0;)Z
@@ -293,7 +303,8 @@ val openExternallyPatch = bytecodePatch(
                     nop
 
                     :skip_auto_open
-                    # p2 is null — explicit "Open With" request, always show dialog
+                    # shouldAutoOpen() returned false — explicit "Open With" request,
+                    # always show dialog
                     nop
                 """,
             )

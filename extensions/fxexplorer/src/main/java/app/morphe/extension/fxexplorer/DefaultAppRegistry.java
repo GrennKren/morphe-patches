@@ -56,6 +56,58 @@ public class DefaultAppRegistry {
     }
 
     /**
+     * Determine whether auto-open with default app should be attempted.
+     *
+     * This uses call stack inspection to distinguish between two code paths
+     * that both call y0.j(Context, kh/e, lf/b):
+     *
+     * 1. Single-click "Open" path:
+     *    h0.b(1) → h0.F() → a.m() → b0.a() → y0.j()
+     *    In this case, the user just tapped a file and expects it to open
+     *    directly with the default app if one is stored.
+     *
+     * 2. Explicit "Open With" path:
+     *    h0.b(2) → h0.G() → y0.j()
+     *    In this case, the user hold-touched the file and clicked the
+     *    bottom-right "Open With" button, explicitly requesting the dialog.
+     *    We must NOT auto-open and must show the dialog instead.
+     *
+     * Both paths call y0.j() with the SAME parameters (lf/b is always null),
+     * so parameter inspection cannot distinguish them. Stack trace is the
+     * only reliable way.
+     *
+     * The key discriminator: class "hf.b0" appears in the stack ONLY for
+     * the single-click path (b0.a() is the file-opener method). It does NOT
+     * appear for the explicit "Open With" path.
+     *
+     * Performance note: Thread.getStackTrace() is "expensive" but this method
+     * is called only once per file-open action (not in a tight loop), so the
+     * overhead is negligible.
+     *
+     * @return true if auto-open should be attempted, false if the dialog
+     *         should always be shown
+     */
+    public static boolean shouldAutoOpen() {
+        try {
+            StackTraceElement[] stack = Thread.currentThread().getStackTrace();
+            if (stack == null) return false;
+            for (StackTraceElement element : stack) {
+                if (element == null) continue;
+                String className = element.getClassName();
+                // "hf.b0" is the obfuscated class that contains the a() method
+                // which is the single-click file-opener. If it's in the stack,
+                // we arrived at y0.j() from the single-click "Open" path.
+                if ("hf.b0".equals(className)) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+            // If stack inspection fails, be safe and don't auto-open
+        }
+        return false;
+    }
+
+    /**
      * Check if we're in "selecting default" mode.
      */
     public static boolean isSelectingDefault() {
