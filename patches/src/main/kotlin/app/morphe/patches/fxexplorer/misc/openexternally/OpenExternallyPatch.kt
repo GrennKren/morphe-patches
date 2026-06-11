@@ -7,7 +7,6 @@ package app.morphe.patches.fxexplorer.misc.openexternally
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
-import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patches.fxexplorer.shared.Constants.COMPATIBILITY_FX_EXPLORER
@@ -15,8 +14,6 @@ import app.morphe.util.findFreeRegister
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
-import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
-import com.android.tools.smali.dexlib2.iface.instruction.OffsetInstruction
 
 /**
  * Patch to add missing MIME types and "Open With Default" feature to FX Explorer.
@@ -67,9 +64,7 @@ val openExternallyPatch = bytecodePatch(
         "so files with these extensions can be opened directly with external applications " +
         "instead of showing the 'Open As' dialog. Also adds an 'Open With Default' section " +
         "to the 'Open With' dialog with a wildcard MIME type button that remembers your " +
-        "app choice per file extension, and a 'Clear Default' button to reset stored defaults. " +
-        "Fixes a bug where text files still open with the built-in viewer even when " +
-        "'Text Files' is unchecked in Opening Files settings.",
+        "app choice per file extension, and a 'Clear Default' button to reset stored defaults.",
 ) {
     compatibleWith(COMPATIBILITY_FX_EXPLORER)
 
@@ -136,10 +131,7 @@ val openExternallyPatch = bytecodePatch(
         // ============================================================
         // Part 2: Add "Open With Default" section to "Open With" dialog
         // ============================================================
-        // Previous approach called y0.f(String) + y0.e() directly from smali,
-        // which produced a brown bold header (wrong style) and no icon.
-        //
-        // New approach: delegate ALL UI construction to our Java extension
+        // Delegates ALL UI construction to our Java extension
         // method OpenWithDefaultClickListener.addSection(y0), which:
         // 1. Creates a proper gray uppercase section header using y0.b(resId)
         //    (matching the style of "OPEN WITH FX", "OPEN WITH APPLICATION")
@@ -215,38 +207,10 @@ val openExternallyPatch = bytecodePatch(
         // instance has been created (v0) with its resolver (qe/d) fully
         // initialized, giving us access to the correct File/URI.
         //
-        // CRITICAL DESIGN CHANGE (v3): Previous versions hooked at index 0
-        // (before dialog creation) and tried to construct the intent from
-        // scratch using tryOpenDirectly(filename, pathStr, ctx). This ALWAYS
-        // FAILED because:
-        // - hh/f.toString() does NOT produce a valid filesystem path
-        // - FileProvider.a(ctx, file) doesn't work for all file types;
-        //   the app uses FileProvider.b(ctx, file, type) with extra params
-        // - The resolver (qe/d) which has the proper File/URI was not
-        //   available before the dialog was created
-        //
-        // The new approach hooks at index 3 (after the y0 constructor at
-        // index 2). The constructor creates the dialog AND the resolver
-        // (qe/d), which properly handles:
-        // - Local files: qe/d.f = File (with correct path from hc/i.z())
-        // - Cloud files: qe/d.h = Uri
-        // - MIME type: qe/d.i = String (from fileItem.w() or inferred)
-        //
-        // By calling tryOpenWithDefault(y0 dialog), we reuse the SAME
-        // logic that works when the user clicks the wildcard button in the
-        // dialog — proven to work by user testing.
-        //
-        // If a default is found and the file is opened, we dismiss the
-        // dialog and return-void from y0.j(), which prevents the show-
-        // runnable (s0) from being created/posted. The background resolver
-        // thread (started by y0.i() in the constructor) will complete
-        // harmlessly — it populates a dialog that's never shown.
-        //
-        // Register layout at index 3: v0 = y0 dialog, v1 = 0x1 (unused after)
-        // p0, p1, p2 still hold original params (but not needed for our call)
-        //
-        // IMPORTANT: Uses addInstructionsWithLabels (NOT addInstructions)
-        // because this injection contains labels (:goto_show_dialog).
+        // Uses stack trace inspection via DefaultAppRegistry.shouldAutoOpen()
+        // to check if hf.b0 is in the call stack. If it is, we arrived from
+        // the single-click path and should try auto-open. If not, the user
+        // explicitly requested the "Open With" dialog and we must show it.
         FileOpenDialogFingerprint.method.apply {
             val REGISTRY_CLASS = "Lapp/morphe/extension/fxexplorer/DefaultAppRegistry;"
 
@@ -309,81 +273,6 @@ val openExternallyPatch = bytecodePatch(
                     # shouldAutoOpen() returned false — explicit "Open With" request,
                     # always show dialog
                     nop
-                """,
-            )
-        }
-
-        // ============================================================
-        // Part 5: Fix text files still opening with built-in viewer
-        // when "Text Files" is unchecked in Opening Files settings
-        // ============================================================
-        // BUG: In hf/b0.a(), when textViewerUseInternal=FALSE, the code
-        // falls through to a `goto` that STILL opens the internal
-        // TextViewerActivity instead of showing the "Open With" dialog.
-        //
-        // The relevant code flow:
-        //   [248] const-string v3, "textViewerUseInternal"
-        //   [249] invoke-interface {v6,v3,v14}, SP.getBoolean (default=true)
-        //   [250] move-result v3
-        //   [251] if-nez v3, +3 → [253]   // TRUE → check editor
-        //   [252] goto +0xd → [260]        // FALSE → BUG: still internal!
-        //   [253] const-string v3, "textViewerUseEditor"
-        //   ...
-        //   [260] const-string v3, "TextViewerActivity"  // BUG target!
-        //   ...
-        //   [317] invoke-static/range {v17..v19}, y0.j()  // correct external
-        //
-        // FIX: Replace the `goto +0xd → [260]` at [252] with code that
-        // calls y0.j() and returns. This makes the FALSE path open
-        // externally via the "Open With" dialog instead of internally.
-        //
-        // Parameter registers: v17=Activity, v18=kh/e, v19=lf/b
-        // These are preserved throughout the method for y0.j() calls.
-        FileOpenerFingerprint.method.apply {
-            // Find the const-string "textViewerUseInternal" instruction
-            val textViewerCheckIndex = implementation!!.instructions.indexOfFirst {
-                it.opcode == Opcode.CONST_STRING &&
-                    it is ReferenceInstruction &&
-                    it.reference.toString().contains("textViewerUseInternal")
-            }
-
-            if (textViewerCheckIndex == -1) {
-                throw PatchException(
-                    "Could not find 'textViewerUseInternal' string in b0.a(). " +
-                        "The APK version may not be supported."
-                )
-            }
-
-            // The goto instruction is 4 positions after the const-string:
-            // [N]   const-string v3, "textViewerUseInternal"
-            // [N+1] invoke-interface (SP.getBoolean)
-            // [N+2] move-result v3
-            // [N+3] if-nez v3, +3 → editor check  (TRUE path)
-            // [N+4] goto +0xd → [260]             (FALSE path — BUG!)
-            val gotoIndex = textViewerCheckIndex + 4
-
-            // Verify the instruction at gotoIndex is indeed a goto
-            val gotoInstruction = implementation!!.instructions.elementAt(gotoIndex)
-            if (gotoInstruction.opcode != Opcode.GOTO) {
-                throw PatchException(
-                    "Expected goto at index $gotoIndex after textViewerUseInternal check, " +
-                        "but found ${gotoInstruction.opcode.name}. " +
-                        "The APK version may not be supported."
-                )
-            }
-
-            // Remove the buggy goto instruction
-            removeInstruction(gotoIndex)
-
-            // Insert the fix: call y0.j() and return when textViewerUseInternal=FALSE
-            // This replaces the goto that incorrectly went to TextViewerActivity
-            addInstructions(
-                gotoIndex,
-                """
-                    # textViewerUseInternal is FALSE — open externally with "Open With" dialog
-                    # v17=Activity(Context), v18=kh/e(fileItem), v19=lf/b(callback)
-                    invoke-static/range {v17..v19}, Lhf/y0;->j(Landroid/content/Context;Lkh/e;Llf/b;)V
-                    return-void
                 """,
             )
         }

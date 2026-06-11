@@ -53,8 +53,14 @@ public class y0 extends Dialog {
 
     /**
      * Grid item — creates icon+text item in a gh/g grid layout.
+     *
+     * CRITICAL: The 3rd parameter MUST be qe.b (NOT Object)!
+     * If declared as Object, R8 compiles the descriptor as Ljava/lang/Object;
+     * but the real APK has Lqe/b;. This descriptor mismatch causes
+     * NoSuchMethodError at runtime, which extends Error (NOT Exception)
+     * and is NOT caught by catch(Exception) — app crashes!
      */
-    public void e(CharSequence label, Drawable icon, Object qeB, View.OnClickListener listener) {
+    public void e(CharSequence label, Drawable icon, qe.b qeB, View.OnClickListener listener) {
         // Stub - add grid item
     }
 

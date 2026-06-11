@@ -41,8 +41,10 @@ import hf.y0;
  *    and re-resolves apps, showing ALL apps that can open any file type.
  *    The next app the user picks will be saved as the default.
  *
- * This class is SAFE - all exceptions are caught in DefaultAppRegistry methods,
- * so it will never crash the host app.
+ * CRITICAL: All catch blocks use Throwable (NOT Exception) because
+ * descriptor mismatches cause NoSuchMethodError which extends Error,
+ * NOT Exception. Using catch(Exception) would NOT catch it and the
+ * app would crash!
  */
 @SuppressWarnings("unused")
 public class OpenWithDefaultClickListener implements View.OnClickListener {
@@ -97,13 +99,15 @@ public class OpenWithDefaultClickListener implements View.OnClickListener {
             // 4. Add "Clear Default" button if a default is currently stored
             addClearDefaultButton(dialog, ctx);
 
-        } catch (Exception e) {
-            // Fallback: use the old brown-bold header style if proper header fails
+        } catch (Throwable t) {
+            // CRITICAL: Must catch Throwable (NOT Exception) because descriptor
+            // mismatches cause NoSuchMethodError which extends Error, not Exception.
+            // If we only catch Exception, NoSuchMethodError propagates and crashes.
             try {
                 dialog.f("Open With Default");
                 dialog.e("*/*", null, null, new OpenWithDefaultClickListener(dialog));
-            } catch (Exception ignored) {
-                // Never crash the host app
+            } catch (Throwable ignored) {
+                // Never crash the host app — even if everything fails
             }
         }
     }
@@ -138,7 +142,7 @@ public class OpenWithDefaultClickListener implements View.OnClickListener {
                     tv.setText(newText);
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
             // If we can't modify the text, the header will show the
             // original "OPEN WITH APPLICATION" text — not ideal but not a crash
         }
@@ -187,8 +191,9 @@ public class OpenWithDefaultClickListener implements View.OnClickListener {
             View.OnClickListener listener = new ClearDefaultClickListener(dialog, ext);
 
             dialog.e(label, clearIcon, null, listener);
-        } catch (Exception ignored) {
-            // Don't crash — the clear button is optional
+        } catch (Throwable ignored) {
+            // Don't crash — the clear button is optional.
+            // Must catch Throwable because NoSuchMethodError extends Error.
         }
     }
 
@@ -259,7 +264,7 @@ public class OpenWithDefaultClickListener implements View.OnClickListener {
             textPaint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             textPaint.setTextAlign(Paint.Align.CENTER);
             float textY = size / 2f - (textPaint.descent() + textPaint.ascent()) / 2f;
-            canvas.drawText("\u2715", size / 2f, textY, textPaint); // ✕ symbol
+            canvas.drawText("\u2715", size / 2f, textY, textPaint); // X symbol
 
             return new BitmapDrawable(ctx.getResources(), bitmap);
         } catch (Exception e) {
@@ -311,8 +316,8 @@ public class OpenWithDefaultClickListener implements View.OnClickListener {
                 // Dismiss the dialog — the user will need to reopen it
                 // (rebuilding the dialog in-place is too complex)
                 dialog.dismiss();
-            } catch (Exception ignored) {
-                // Never crash
+            } catch (Throwable ignored) {
+                // Never crash — must catch Throwable for NoSuchMethodError safety
             }
         }
     }

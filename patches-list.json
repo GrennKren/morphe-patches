@@ -2813,6 +2813,33 @@
       "options": []
     },
     {
+      "name": "Fix text file viewer setting",
+      "description": "Fixes a bug where text files (.txt etc.) still open with the built-in FX Text Viewer/Editor even when 'Text Files' is unchecked in Settings > Opening Files. When unchecked, text files will now correctly open via the 'Open With' dialog (or the default app if 'Open files externally' patch is also applied). This fixes a pre-existing bug in FX Explorer.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Force original audio",
       "description": "Adds an option to always use the original audio track.",
       "default": true,
@@ -5207,7 +5234,7 @@
     },
     {
       "name": "Open files externally",
-      "description": "Adds missing MIME types for .md, .yaml, .toml and other file extensions, so files with these extensions can be opened directly with external applications instead of showing the 'Open As' dialog. Also adds an 'Open With Default' section to the 'Open With' dialog with a wildcard MIME type button that remembers your app choice per file extension, and a 'Clear Default' button to reset stored defaults. Fixes a bug where text files still open with the built-in viewer even when 'Text Files' is unchecked in Opening Files settings.",
+      "description": "Adds missing MIME types for .md, .yaml, .toml and other file extensions, so files with these extensions can be opened directly with external applications instead of showing the 'Open As' dialog. Also adds an 'Open With Default' section to the 'Open With' dialog with a wildcard MIME type button that remembers your app choice per file extension, and a 'Clear Default' button to reset stored defaults.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
