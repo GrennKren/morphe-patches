@@ -48,6 +48,11 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  * for a stored default app for the file's extension. If found, opens the file
  * directly with that app, skipping the dialog entirely.
  * Uses addInstructionsWithLabels for label support (NOT addInstructions).
+ *
+ * IMPORTANT: The lf/b parameter (p2) distinguishes between user-initiated
+ * "Open With" (p2 == null, from hold-touch → bottom-right button) and
+ * automatic file opening (p2 != null, from single-click). When p2 is null,
+ * the user explicitly wants the dialog — we must NOT auto-open.
  */
 @Suppress("unused")
 val openExternallyPatch = bytecodePatch(
@@ -263,10 +268,16 @@ val openExternallyPatch = bytecodePatch(
                     # ===== Part 4: Try to open with stored default before showing dialog =====
                     # v0 = y0 dialog instance (just constructed, resolver fully initialized)
                     # v1 = temp register
+                    # p2 = lf/b parameter — null means EXPLICIT "Open With" request
+                    #       (user hold-touched → clicked bottom-right button)
+                    #       In that case, we must show the dialog, NOT auto-open.
 
+                    # Check if this is an explicit "Open With" request (p2 == null)
+                    if-eqz p2, :skip_auto_open
+
+                    # p2 is non-null — this is a single-click file open, try auto-open
                     # Call tryOpenWithDefault(y0 dialog) — this uses the dialog's
                     # resolver (qe/d) which has the correct File/URI for the file.
-                    # This is the SAME method that works when clicking the wildcard button.
                     invoke-static {v0}, $REGISTRY_CLASS->tryOpenWithDefault(Lhf/y0;)Z
                     move-result v1
 
@@ -279,6 +290,10 @@ val openExternallyPatch = bytecodePatch(
 
                     :goto_show_dialog
                     # No default found — continue with normal dialog show flow
+                    nop
+
+                    :skip_auto_open
+                    # p2 is null — explicit "Open With" request, always show dialog
                     nop
                 """,
             )
