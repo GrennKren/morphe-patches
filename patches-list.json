@@ -5207,7 +5207,7 @@
     },
     {
       "name": "Open files externally",
-      "description": "Adds missing MIME types for .md, .yaml, .toml and other file extensions, so files with these extensions can be opened directly with external applications instead of showing the 'Open As' dialog. Also adds an 'Open With Default' section to the 'Open With' dialog with a wildcard MIME type button that remembers your app choice per file extension.",
+      "description": "Adds missing MIME types for .md, .yaml, .toml and other file extensions, so files with these extensions can be opened directly with external applications instead of showing the 'Open As' dialog. Also adds an 'Open With Default' section to the 'Open With' dialog with a wildcard MIME type button that remembers your app choice per file extension, and a 'Clear Default' button to reset stored defaults. Fixes a bug where text files still open with the built-in viewer even when 'Text Files' is unchecked in Opening Files settings.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [

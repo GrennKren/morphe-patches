@@ -152,6 +152,26 @@ public class DefaultAppRegistry {
     }
 
     /**
+     * Clear the stored default app for a file extension.
+     *
+     * @param ctx       The Android context
+     * @param extension The file extension (without dot)
+     * @return true if a default was cleared, false if none was stored
+     */
+    public static boolean clearDefault(Context ctx, String extension) {
+        if (extension == null || ctx == null) return false;
+        try {
+            SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            String key = KEY_PREFIX + extension;
+            if (!prefs.contains(key)) return false;
+            prefs.edit().remove(key).apply();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
      * Extract the file extension from a filename.
      */
     public static String getFileExtension(String filename) {
