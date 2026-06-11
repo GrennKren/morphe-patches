@@ -7617,6 +7617,33 @@
         }
       ],
       "options": []
+    },
+    {
+      "name": "Web Access on hotspot",
+      "description": "Enables Web Access when the phone is acting as a mobile hotspot, even without Mobile Data being active. By default, FX Explorer's Web Access only works when connected to WiFi as a client or when Mobile Data is active with 'Cellular Access' enabled. This patch allows Web Access to start on a mobile hotspot LAN without requiring Mobile Data, since the hotspot creates a functional local network that other devices can connect to.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
     }
   ]
 }
