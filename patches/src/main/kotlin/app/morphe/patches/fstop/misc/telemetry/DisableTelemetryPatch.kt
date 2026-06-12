@@ -43,6 +43,8 @@ import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
  * - Replacing MyApplication.f() body with return-void (disables Java Bugsnag)
  * - Replacing FirebaseAnalytics.getInstance() result with null (disables Firebase)
  * - NOP-ing the invoke-virtual call to performNativeBugsnagSetup() in onCreate()
+ * - Replacing Bugsnag SDK static methods (c, e, a) with return-void
+ *   to prevent crashes when code calls Bugsnag without it being initialized
  */
 @Suppress("unused")
 val disableTelemetryPatch = bytecodePatch(
@@ -161,6 +163,53 @@ val disableTelemetryPatch = bytecodePatch(
                 nativeBugsnagCallIndex,
                 "nop",
             )
+        }
+
+        // ============================================================
+        // Part 4: Disable Bugsnag SDK leaveBreadcrumb method
+        // ============================================================
+        // n.c(String) calls n.b() internally which throws IllegalStateException
+        // if Bugsnag hasn't been started. Since we prevented Bugsnag from
+        // starting (Part 1), we must also replace this method with return-void
+        // to prevent crashes in FolderScannerService, ListOfSomethingActivity, etc.
+        BugsnagLeaveBreadcrumbFingerprint.method.apply {
+            val impl = implementation!!
+            clearTryBlocks(impl)
+            val instructions = impl.instructions.toList()
+            for (i in instructions.size - 1 downTo 1) {
+                impl.removeInstruction(i)
+            }
+            replaceInstruction(0, "return-void")
+        }
+
+        // ============================================================
+        // Part 5: Disable Bugsnag SDK notifyError method
+        // ============================================================
+        // n.e(Throwable) also calls n.b() internally which throws.
+        // Called from FolderScannerService, ListOfSomethingActivity, etc.
+        BugsnagNotifyErrorFingerprint.method.apply {
+            val impl = implementation!!
+            clearTryBlocks(impl)
+            val instructions = impl.instructions.toList()
+            for (i in instructions.size - 1 downTo 1) {
+                impl.removeInstruction(i)
+            }
+            replaceInstruction(0, "return-void")
+        }
+
+        // ============================================================
+        // Part 6: Disable Bugsnag SDK addMetadata method
+        // ============================================================
+        // n.a(String, String, Object) also calls n.b() internally which throws.
+        // Called from MyApplication anonymous class (Bugsnag callback).
+        BugsnagAddMetadataFingerprint.method.apply {
+            val impl = implementation!!
+            clearTryBlocks(impl)
+            val instructions = impl.instructions.toList()
+            for (i in instructions.size - 1 downTo 1) {
+                impl.removeInstruction(i)
+            }
+            replaceInstruction(0, "return-void")
         }
     }
 }

@@ -84,3 +84,60 @@ internal object NativeBugsnagSetupFingerprint : Fingerprint(
     accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.NATIVE),
     parameters = listOf(),
 )
+
+/**
+ * Fingerprint for Bugsnag.leaveBreadcrumb() static method.
+ *
+ * From APK decompilation:
+ * - Method: Lcom/bugsnag/android/n;->c(Ljava/lang/String;)V
+ * - PUBLIC STATIC, takes String, returns void
+ * - Internally calls n.b() which throws if Bugsnag hasn't been started
+ * - Called from FolderScannerService, ListOfSomethingActivity, p, etc.
+ *
+ * The patch will replace this method body with return-void,
+ * preventing crashes when Bugsnag hasn't been initialized.
+ */
+internal object BugsnagLeaveBreadcrumbFingerprint : Fingerprint(
+    definingClass = "Lcom/bugsnag/android/n;",
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
+    parameters = listOf("Ljava/lang/String;"),
+)
+
+/**
+ * Fingerprint for Bugsnag.notifyError() static method.
+ *
+ * From APK decompilation:
+ * - Method: Lcom/bugsnag/android/n;->e(Ljava/lang/Throwable;)V
+ * - PUBLIC STATIC, takes Throwable, returns void
+ * - Internally calls n.b() which throws if Bugsnag hasn't been started
+ * - Called from FolderScannerService, ListOfSomethingActivity, etc.
+ *
+ * The patch will replace this method body with return-void,
+ * preventing crashes when Bugsnag hasn't been initialized.
+ */
+internal object BugsnagNotifyErrorFingerprint : Fingerprint(
+    definingClass = "Lcom/bugsnag/android/n;",
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
+    parameters = listOf("Ljava/lang/Throwable;"),
+)
+
+/**
+ * Fingerprint for Bugsnag.addMetadata() static method.
+ *
+ * From APK decompilation:
+ * - Method: Lcom/bugsnag/android/n;->a(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)V
+ * - PUBLIC STATIC, takes section, key, value, returns void
+ * - Internally calls n.b() which throws if Bugsnag hasn't been started
+ * - Called from MyApplication anonymous class (Bugsnag callback)
+ *
+ * The patch will replace this method body with return-void,
+ * preventing crashes when Bugsnag hasn't been initialized.
+ */
+internal object BugsnagAddMetadataFingerprint : Fingerprint(
+    definingClass = "Lcom/bugsnag/android/n;",
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
+    parameters = listOf("Ljava/lang/String;", "Ljava/lang/String;", "Ljava/lang/Object;"),
+)
