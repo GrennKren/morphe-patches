@@ -2290,6 +2290,33 @@
       "options": []
     },
     {
+      "name": "Disable telemetry",
+      "description": "Disables Bugsnag crash reporting (both Java and native), and Firebase Analytics event tracking. Prevents F-Stop from sending crash reports, device information, and usage analytics to third-party servers.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Disable video codecs",
       "description": "Adds options to disable HDR and VP9 codecs.",
       "default": true,
@@ -5877,6 +5904,33 @@
               "version": "9.1.0.8",
               "isExperimental": false,
               "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Quick select in media viewer",
+      "description": "Adds a select/deselect toggle button to the media viewer's toolbar, allowing quick selection of the currently viewed image or video without needing to long-press on the FilmStrip thumbnail.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
               "description": null
             }
           ]
