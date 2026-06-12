@@ -8,9 +8,6 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patcher.patch.resourcePatch
-import app.morphe.patches.all.misc.packagename.changePackageNamePatch
-import app.morphe.patches.all.misc.packagename.setOrGetFallbackPackageName
 import app.morphe.patches.fstop.shared.Constants.COMPATIBILITY_FSTOP
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -38,15 +35,10 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  * The button appears in the toolbar (same area as share, delete, etc.),
  * NOT in fullscreen mode. It follows the toolbar show/hide behavior.
  *
- * Additionally, this patch changes the package name
- * (default: com.fstop.photo.morphe) so the patched app can be installed
- * alongside the original.
- *
  * Implementation:
- * 1. Change package name and update AndroidManifest.xml references
- * 2. Hook onCreateOptionsMenu — after menu inflation, calls
+ * 1. Hook onCreateOptionsMenu — after menu inflation, calls
  *    QuickSelectHelper.addSelectMenuItem() to add the select button
- * 3. Hook onPrepareOptionsMenu — calls QuickSelectHelper.updateSelectButtonIcon()
+ * 2. Hook onPrepareOptionsMenu — calls QuickSelectHelper.updateSelectButtonIcon()
  *    to keep the icon in sync when navigating between images
  */
 @Suppress("unused")
@@ -54,39 +46,11 @@ val quickSelectPatch = bytecodePatch(
     name = "Quick select in media viewer",
     description = "Adds a select/deselect toggle button to the media viewer's " +
         "toolbar, allowing quick selection of the currently viewed image or video " +
-        "without needing to long-press on the FilmStrip thumbnail. " +
-        "Also enables side-by-side installation.",
+        "without needing to long-press on the FilmStrip thumbnail.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 
-    dependsOn(changePackageNamePatch)
-
     extendWith("extensions/fstop.mpe")
-
-    // Inline resource patch that changes the package name and updates all manifest
-    // references so the patched app can be installed alongside the original.
-    dependsOn(
-        resourcePatch {
-            execute {
-                val fromPackage = "com.fstop.photo"
-                val toPackage = setOrGetFallbackPackageName("$fromPackage.morphe")
-
-                val transformations = mapOf(
-                    "package=\"$fromPackage\"" to "package=\"$toPackage\"",
-                    "android:authorities=\"$fromPackage." to "android:authorities=\"$toPackage.",
-                    "$fromPackage.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" to
-                        "$toPackage.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
-                )
-
-                val manifest = get("AndroidManifest.xml")
-                manifest.writeText(
-                    transformations.entries.fold(manifest.readText()) { acc, (from, to) ->
-                        acc.replace(from, to)
-                    },
-                )
-            }
-        }
-    )
 
     execute {
         val EXTENSION_CLASS = "Lapp/morphe/extension/fstop/QuickSelectHelper;"

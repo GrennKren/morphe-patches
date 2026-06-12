@@ -5913,9 +5913,12 @@
     },
     {
       "name": "Quick select in media viewer",
-      "description": "Adds a select/deselect toggle button to the media viewer's toolbar, allowing quick selection of the currently viewed image or video without needing to long-press on the FilmStrip thumbnail.",
+      "description": "Adds a select/deselect toggle button to the media viewer's toolbar, allowing quick selection of the currently viewed image or video without needing to long-press on the FilmStrip thumbnail. Also enables side-by-side installation.",
       "default": true,
-      "dependencies": [],
+      "dependencies": [
+        "ResourcePatch",
+        "ResourcePatch"
+      ],
       "compatiblePackages": [
         {
           "packageName": "com.fstop.photo",
