@@ -4721,6 +4721,33 @@
       "options": []
     },
     {
+      "name": "License compatibility",
+      "description": "Fixes premium detection for users who have purchased the F-Stop key app. The patched APK has a different signing certificate, causing the original checkSignatures() verification to fail. This patch adds an alternative check using getPackageInfo() so that legitimate license holders are correctly detected as premium without needing the 'Unlock premium' bypass patch.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Loop video",
       "description": "Adds an option to loop videos and display loop video button in the video player.",
       "default": true,
@@ -7566,7 +7593,7 @@
     },
     {
       "name": "Unlock premium",
-      "description": "Unlocks premium features by bypassing the license verification in s3.a.d(). This is needed even for legitimately purchased keys because the patched APK has a different signing certificate, causing checkSignatures() to fail. Disabled by default.",
+      "description": "Bypasses all license checks, making s3.a.d() and s3.a.e() always return true. For users who have NOT purchased the premium key app. If you have purchased the key app, the 'License compatibility' patch (enabled by default) should be sufficient. Disabled by default.",
       "default": false,
       "dependencies": [],
       "compatiblePackages": [
