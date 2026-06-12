@@ -131,3 +131,43 @@ internal object DialogPopulatorFingerprint : Fingerprint(
         ),
     ),
 )
+
+/**
+ * Fingerprint for the system dialog launcher in Lhf/p0;.
+ *
+ * From APK analysis: r(Landroid/content/Context; Lkh/h; Landroid/content/pm/ResolveInfo;)V
+ * This is a PUBLIC STATIC method that shows a system-level "Open with" chooser
+ * dialog (the dark/black themed one) when ResolveInfo is null, or launches a
+ * specific app when ResolveInfo is provided.
+ *
+ * When called from b0.a() with null ResolveInfo, this method shows the system
+ * chooser instead of FX Explorer's native green "Open With" dialog (y0.j).
+ * This happens for video and audio files when their internal players are disabled,
+ * because b0.a() routes them through a different code path than image/text files.
+ *
+ * Key identifiers from APK decompilation:
+ * - Public static method in Lhf/p0;
+ * - Parameters: Context, kh/h (local file), ResolveInfo
+ * - Returns void
+ * - Contains string "videoPlayerUseInternal" (checks internal video player)
+ * - Contains string "MediaPlayer" (internal media player component name)
+ * - Creates Llg/b; thread (system dialog launcher)
+ * - Creates Lee/d; callback for app resolution
+ *
+ * The patch hooks this method to redirect null-ResolveInfo calls to y0.j(),
+ * ensuring video and audio files show FX Explorer's native "Open With" dialog
+ * instead of the system-level dark chooser.
+ */
+internal object SystemDialogRedirectFingerprint : Fingerprint(
+    definingClass = "Lhf/p0;",
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
+    parameters = listOf("Landroid/content/Context;", "Lkh/h;", "Landroid/content/pm/ResolveInfo;"),
+    strings = listOf("videoPlayerUseInternal"),
+    filters = listOf(
+        methodCall(
+            definingClass = "Llg/b;",
+            name = "<init>",
+        ),
+    ),
+)
