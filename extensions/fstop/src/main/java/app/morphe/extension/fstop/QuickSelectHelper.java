@@ -35,8 +35,15 @@ import c3.t;
  * - Easy one-tap access to toggle selection
  *
  * The icon changes to indicate current selection state:
- * - Unselected: outline checkbox (gray)
- * - Selected: filled checkbox with checkmark (green)
+ * - Unselected: outline circle (gray)
+ * - Selected: filled circle with checkmark (green)
+ *
+ * IMPORTANT: All field/method names match the REAL DEX bytecode, NOT jadx
+ * decompiler output. Verified via dexdump against the actual APK.
+ * - ViewImageActivityNew.u0 (not f8486u0)
+ * - ViewImageActivityNew.L0 (MyAppToolbar — for visibility tracking)
+ * - c3.t.U() for isSelected (not z())
+ * - c3.t.X(boolean) for setSelected (same name)
  */
 @SuppressWarnings("unused")
 public class QuickSelectHelper {
@@ -45,10 +52,11 @@ public class QuickSelectHelper {
 
     /**
      * Add the quick select button to the media viewer layout.
-     * Called from the patched onCreateOptionsMenu (or after setContentView).
+     * Called from the patched onCreateOptionsMenu (after menu inflation).
      *
      * Places the button as a floating ImageView below the header bar,
-     * on the right side of the screen.
+     * on the right side of the screen. Also sets up a layout listener
+     * on the toolbar to track fullscreen state changes.
      */
     public static void addSelectButton(Activity activity) {
         try {
@@ -78,14 +86,14 @@ public class QuickSelectHelper {
             selectButton.setFocusable(true);
 
             // Set background with ripple effect
-            int[][] states = new int[][] { new int[] { android.R.attr.state_pressed } };
-            int[] colors = new int[] { Color.parseColor("#1A000000") };
-            android.content.res.ColorStateList rippleColor = android.content.res.ColorStateList.valueOf(Color.parseColor("#1A000000"));
-            android.graphics.drawable.RippleDrawable ripple = new android.graphics.drawable.RippleDrawable(
-                rippleColor,
-                createCircleBackground(activity),
-                null
-            );
+            android.content.res.ColorStateList rippleColor =
+                android.content.res.ColorStateList.valueOf(Color.parseColor("#1A000000"));
+            android.graphics.drawable.RippleDrawable ripple =
+                new android.graphics.drawable.RippleDrawable(
+                    rippleColor,
+                    createCircleBackground(activity),
+                    null
+                );
             selectButton.setBackground(ripple);
 
             // Layout params: positioned below toolbar, right side
@@ -102,6 +110,11 @@ public class QuickSelectHelper {
             });
 
             contentView.addView(selectButton, params);
+
+            // Track toolbar visibility to show/hide the select button
+            // when the user enters/exits fullscreen mode.
+            // L0 is the MyAppToolbar field (real DEX name, verified via dexdump).
+            setupToolbarVisibilityTracking(activity, selectButton);
         } catch (Throwable ignored) {}
     }
 
@@ -120,15 +133,98 @@ public class QuickSelectHelper {
 
     /**
      * Show or hide the select button based on toolbar visibility.
-     * Called when toolbar show/hide state changes.
+     * This is called from the toolbar visibility listener when the
+     * toolbar is shown or hidden (fullscreen toggle).
      */
-    public static void setSelectButtonVisible(Activity activity, boolean visible) {
+    public static void setSelectButtonVisible(Activity activity, boolean toolbarVisible) {
         try {
             View selectButton = activity.findViewById(BUTTON_ID);
             if (selectButton != null) {
-                selectButton.setVisibility(visible ? View.VISIBLE : View.GONE);
+                selectButton.setVisibility(toolbarVisible ? View.VISIBLE : View.GONE);
             }
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Set up a layout change listener on the toolbar (L0) to track
+     * when it becomes visible/hidden. This allows the quick select button
+     * to automatically follow the toolbar's visibility in fullscreen mode.
+     *
+     * Uses View.OnLayoutChangeListener which fires whenever the view's
+     * layout changes, including visibility changes.
+     */
+    private static void setupToolbarVisibilityTracking(Activity activity, View selectButton) {
+        try {
+            if (!(activity instanceof ViewImageActivityNew)) return;
+            ViewImageActivityNew vian = (ViewImageActivityNew) activity;
+
+            // L0 is the MyAppToolbar field (real DEX name).
+            // We use reflection to access it since the stub might not
+            // expose it directly, and to avoid coupling to specific
+            // toolbar class names.
+            View toolbar = findToolbarView(vian);
+            if (toolbar != null) {
+                toolbar.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+                    @Override
+                    public void onLayoutChange(View v, int left, int top, int right,
+                                               int bottom, int oldLeft, int oldTop,
+                                               int oldRight, int oldBottom) {
+                        // When toolbar visibility changes, update select button
+                        boolean toolbarVisible = (v.getVisibility() == View.VISIBLE)
+                            && (v.getHeight() > 0);
+                        selectButton.setVisibility(toolbarVisible ? View.VISIBLE : View.GONE);
+                    }
+                });
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Find the toolbar view in the activity's view hierarchy.
+     * Tries multiple approaches:
+     * 1. Direct field access via L0 (real DEX name for MyAppToolbar)
+     * 2. Fallback: search by class name in view hierarchy
+     */
+    private static View findToolbarView(Activity activity) {
+        try {
+            if (activity instanceof ViewImageActivityNew) {
+                ViewImageActivityNew vian = (ViewImageActivityNew) activity;
+                // Try to access L0 field via reflection (it's public)
+                try {
+                    java.lang.reflect.Field l0Field =
+                        ViewImageActivityNew.class.getDeclaredField("L0");
+                    Object toolbar = l0Field.get(vian);
+                    if (toolbar instanceof View) {
+                        return (View) toolbar;
+                    }
+                } catch (NoSuchFieldException ignored) {
+                    // Field might have a different name, try fallback
+                }
+            }
+
+            // Fallback: search for MyAppToolbar in the view hierarchy
+            View rootView = activity.findViewById(android.R.id.content);
+            if (rootView == null) return null;
+            return findViewByClassName(rootView, "MyAppToolbar");
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * Recursively search for a view with a specific class name substring.
+     */
+    private static View findViewByClassName(View root, String className) {
+        if (root == null) return null;
+        if (root.getClass().getSimpleName().contains(className)) return root;
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View found = findViewByClassName(group.getChildAt(i), className);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static void updateButtonState(Activity activity, View button) {
@@ -138,24 +234,36 @@ public class QuickSelectHelper {
         }
     }
 
+    /**
+     * Toggle the selection state of the currently displayed media item.
+     *
+     * Uses the REAL DEX field/method names:
+     * - ViewImageActivityNew.u0 (l3.k data holder)
+     * - l3.k.o() to get current c3.t item
+     * - c3.t.U() to check if selected (real DEX name, jadx renamed to z())
+     * - c3.t.X(boolean) to set selected (same name in DEX and jadx)
+     */
     private static void toggleCurrentItemSelection(Activity activity) {
         if (activity instanceof ViewImageActivityNew) {
             ViewImageActivityNew vian = (ViewImageActivityNew) activity;
-            t currentItem = vian.f8486u0 != null ? vian.f8486u0.o() : null;
+            t currentItem = vian.u0 != null ? vian.u0.o() : null;
             if (currentItem != null) {
-                boolean isSelected = currentItem.z();
-                currentItem.X(!isSelected);
+                boolean isSelected = currentItem.U();  // Real DEX: U()Z, not z()
+                currentItem.X(!isSelected);            // Real DEX: X(Z)V
             }
         }
     }
 
+    /**
+     * Check if the currently displayed media item is selected.
+     */
     private static boolean isCurrentItemSelected(Activity activity) {
         try {
             if (activity instanceof ViewImageActivityNew) {
                 ViewImageActivityNew vian = (ViewImageActivityNew) activity;
-                t currentItem = vian.f8486u0 != null ? vian.f8486u0.o() : null;
+                t currentItem = vian.u0 != null ? vian.u0.o() : null;
                 if (currentItem != null) {
-                    return currentItem.z();
+                    return currentItem.U();  // Real DEX: U()Z, not z()
                 }
             }
         } catch (Throwable ignored) {}
@@ -179,7 +287,7 @@ public class QuickSelectHelper {
 
     /**
      * Create a select/deselect icon as a BitmapDrawable.
-     * - Unselected: outline circle with checkmark outline (gray)
+     * - Unselected: outline circle (gray)
      * - Selected: filled circle with checkmark (green)
      */
     private static Drawable createSelectIcon(Context context, boolean isSelected) {

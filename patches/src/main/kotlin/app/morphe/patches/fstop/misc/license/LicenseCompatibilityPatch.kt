@@ -84,8 +84,8 @@ val licenseCompatibilityPatch = bytecodePatch(
                 0,
                 """
                     # License compatibility: check if key app is installed
-                    sget-object v0, Lcom/fstop/photo/b0;->f8701r:Landroid/content/Context;
-                    invoke-static {v0}, $EXTENSION_CLASS->isKeyAppInstalled(Landroid/content/Context;)Z
+                    # Uses ActivityThread internally — no dependency on obfuscated APK fields
+                    invoke-static {}, $EXTENSION_CLASS->isKeyAppInstalled()Z
                     move-result v0
                     if-eqz v0, :cond_license_fallback
                     const/4 v0, 0x1

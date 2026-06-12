@@ -5940,7 +5940,7 @@
     },
     {
       "name": "Quick select in media viewer",
-      "description": "Adds a select/deselect toggle icon button below the header bar in the media viewer, allowing quick one-tap selection of the currently viewed image or video without needing to long-press on the FilmStrip.",
+      "description": "Adds a select/deselect toggle icon button below the header bar in the media viewer, allowing quick one-tap selection of the currently viewed image or video without needing to long-press on the FilmStrip. The button automatically hides in fullscreen mode.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [

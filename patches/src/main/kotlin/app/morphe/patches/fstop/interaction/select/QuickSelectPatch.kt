@@ -30,20 +30,30 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  * The button is NOT inside the 3-dot menu or the toolbar itself — it's
  * a standalone floating icon positioned below the header bar on the right
  * side of the screen. It follows the toolbar show/hide behavior
- * (hidden in fullscreen mode).
+ * (hidden in fullscreen mode) by using a layout change listener on
+ * the toolbar view.
  *
  * Implementation:
  * 1. Hook onCreateOptionsMenu — after menu inflation, calls
- *    QuickSelectHelper.addSelectButton() to add the floating button
+ *    QuickSelectHelper.addSelectButton() which adds the floating button
+ *    AND sets up toolbar visibility tracking
  * 2. Hook onPrepareOptionsMenu — calls QuickSelectHelper.updateSelectButtonIcon()
  *    to keep the icon in sync when navigating between images
+ *
+ * The toolbar visibility tracking is handled internally by QuickSelectHelper
+ * using an OnLayoutChangeListener on the toolbar view, so no additional
+ * bytecode hooks are needed for fullscreen support.
+ *
+ * IMPORTANT: All field/method references in QuickSelectHelper use REAL DEX
+ * names verified via dexdump (u0 not f8486u0, U() not z(), etc.)
  */
 @Suppress("unused")
 val quickSelectPatch = bytecodePatch(
     name = "Quick select in media viewer",
     description = "Adds a select/deselect toggle icon button below the header bar " +
         "in the media viewer, allowing quick one-tap selection of the currently " +
-        "viewed image or video without needing to long-press on the FilmStrip.",
+        "viewed image or video without needing to long-press on the FilmStrip. " +
+        "The button automatically hides in fullscreen mode.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 
@@ -57,8 +67,9 @@ val quickSelectPatch = bytecodePatch(
         // ============================================================
         // Hook onCreateOptionsMenu(ViewImageActivityNew, Menu)
         // After getMenuInflater().inflate(view_image_menu, menu), we inject
-        // a call to QuickSelectHelper.addSelectButton(this) which adds
-        // the floating icon button to the activity's content view.
+        // a call to QuickSelectHelper.addSelectButton(this) which:
+        //   a) Adds the floating icon button
+        //   b) Sets up toolbar visibility tracking for fullscreen
         CreateOptionsMenuFingerprint.method.apply {
             val inflateIndex = implementation!!.instructions.indexOfFirst {
                 it.opcode == Opcode.INVOKE_VIRTUAL &&
