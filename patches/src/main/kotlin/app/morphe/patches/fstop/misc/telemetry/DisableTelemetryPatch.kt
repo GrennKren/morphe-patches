@@ -11,9 +11,10 @@ import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patches.fstop.shared.Constants.COMPATIBILITY_FSTOP
-import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 
 /**
  * Patch to disable all telemetry and crash reporting in F-Stop Photo Gallery.
@@ -53,6 +54,18 @@ val disableTelemetryPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_FSTOP)
 
     execute {
+        // Helper: clear all try-catch blocks from a MutableMethodImplementation.
+        // Without this, removing instructions that are referenced by exception handlers
+        // leaves dangling handler addresses, which causes DEX verification to fail with
+        // "Invalid handler addr" and the entire DEX file becomes unloadable.
+        fun clearTryBlocks(impl: MutableMethodImplementation) {
+            val field = MutableMethodImplementation::class.java.getDeclaredField("tryBlocks")
+            field.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val tryBlocks = field.get(impl) as java.util.ArrayList<*>
+            tryBlocks.clear()
+        }
+
         // ============================================================
         // Part 1: Disable Java Bugsnag initialization
         // ============================================================
@@ -64,6 +77,8 @@ val disableTelemetryPatch = bytecodePatch(
         // - Custom uncaught exception handler registration
         BugsnagInitFingerprint.method.apply {
             val impl = implementation!!
+            // Clear try-catch blocks FIRST to avoid "Invalid handler addr" DEX errors
+            clearTryBlocks(impl)
             val instructions = impl.instructions.toList()
             // Remove all instructions from end to 1, then replace index 0 with return-void
             for (i in instructions.size - 1 downTo 1) {
@@ -139,9 +154,13 @@ val disableTelemetryPatch = bytecodePatch(
                 return@apply
             }
 
-            // Replace the invoke-virtual with nop (can't remove because it shifts indices)
-            // Actually, we can remove it since we're not referencing later indices
-            impl.removeInstruction(nativeBugsnagCallIndex)
+            // Replace the invoke-virtual with nop.
+            // We use replaceInstruction instead of removeInstruction to avoid
+            // shifting instruction indices, which would break try-catch handler offsets.
+            replaceInstruction(
+                nativeBugsnagCallIndex,
+                "nop",
+            )
         }
     }
 }

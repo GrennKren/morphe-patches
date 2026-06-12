@@ -5913,12 +5913,9 @@
     },
     {
       "name": "Quick select in media viewer",
-      "description": "Adds a select/deselect toggle button to the media viewer's toolbar, allowing quick selection of the currently viewed image or video without needing to long-press on the FilmStrip thumbnail. Also enables side-by-side installation.",
+      "description": "Adds a select/deselect toggle button to the media viewer's toolbar, allowing quick selection of the currently viewed image or video without needing to long-press on the FilmStrip thumbnail.",
       "default": true,
-      "dependencies": [
-        "ResourcePatch",
-        "ResourcePatch"
-      ],
+      "dependencies": [],
       "compatiblePackages": [
         {
           "packageName": "com.fstop.photo",
@@ -6799,6 +6796,36 @@
       "options": []
     },
     {
+      "name": "Side-by-side installation",
+      "description": "Changes the package name to allow installing the patched app alongside the original. Also updates hardcoded ContentProvider authority strings in bytecode to match the new package name. Without these bytecode fixes, the app would crash because providers cannot resolve URIs.",
+      "default": false,
+      "dependencies": [
+        "ResourcePatch",
+        "ResourcePatch"
+      ],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "SponsorBlock",
       "description": "Adds options to enable and configure SponsorBlock, which can skip undesired video segments such as sponsored content.",
       "default": true,
@@ -7530,6 +7557,33 @@
               "version": "7.29.52",
               "isExperimental": false,
               "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Unlock premium",
+      "description": "Unlocks premium features by making the app think the F-Stop Key app is installed and activated. This bypasses the license verification that checks for the com.fstop.photo.key package. Disabled by default — only enable if you understand the implications.",
+      "default": false,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
               "description": null
             }
           ]

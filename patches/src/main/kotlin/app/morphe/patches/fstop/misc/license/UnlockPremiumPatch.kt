@@ -8,6 +8,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patches.fstop.shared.Constants.COMPATIBILITY_FSTOP
+import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 
 /**
  * Patch to unlock F-Stop premium features without requiring the key app.
@@ -57,6 +58,18 @@ val unlockPremiumPatch = bytecodePatch(
     compatibleWith(COMPATIBILITY_FSTOP)
 
     execute {
+        // Helper: clear all try-catch blocks from a MutableMethodImplementation.
+        // Without this, removing instructions that are referenced by exception handlers
+        // leaves dangling handler addresses, which causes DEX verification to fail with
+        // "Invalid handler addr" and the entire DEX file becomes unloadable.
+        fun clearTryBlocks(impl: MutableMethodImplementation) {
+            val field = MutableMethodImplementation::class.java.getDeclaredField("tryBlocks")
+            field.isAccessible = true
+            @Suppress("UNCHECKED_CAST")
+            val tryBlocks = field.get(impl) as java.util.ArrayList<*>
+            tryBlocks.clear()
+        }
+
         // ============================================================
         // Part 1: Patch N2() to always return true
         // ============================================================
@@ -66,6 +79,8 @@ val unlockPremiumPatch = bytecodePatch(
 
         KeyAppCheckFingerprint.method.apply {
             val impl = implementation!!
+            // Clear try-catch blocks FIRST to avoid "Invalid handler addr" DEX errors
+            clearTryBlocks(impl)
             val instructions = impl.instructions.toList()
 
             // Remove all instructions from end to 1
@@ -95,6 +110,8 @@ val unlockPremiumPatch = bytecodePatch(
 
         KeyAppEnabledCheckFingerprint.method.apply {
             val impl = implementation!!
+            // Clear try-catch blocks FIRST to avoid "Invalid handler addr" DEX errors
+            clearTryBlocks(impl)
             val instructions = impl.instructions.toList()
 
             // Remove all instructions from end to 1
