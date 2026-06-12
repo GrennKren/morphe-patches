@@ -5,7 +5,6 @@
 package app.morphe.patches.fstop.interaction.select
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
-import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patches.fstop.shared.Constants.COMPATIBILITY_FSTOP
@@ -13,40 +12,38 @@ import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 
 /**
- * Patch to add a quick select button in F-Stop's media viewer toolbar.
+ * Patch to add a quick select icon button in F-Stop's media viewer.
  *
  * PROBLEM:
  * In F-Stop's media viewer (ViewImageActivityNew), the only way to select
- * an image or video for batch operations is by long-pressing:
- * 1. On the grid view — long-press a thumbnail
- * 2. On the FilmStrip (horizontal thumbnail strip at the bottom) — long-press
- *
- * There is no quick way to select the currently viewed item from the toolbar
- * or header area. This is inconvenient, especially when the FilmStrip is
- * hidden or when the user wants to quickly select without precise touch.
+ * an image or video for batch operations is by long-pressing on thumbnails
+ * in the grid view or the FilmStrip. There is no quick one-tap way to
+ * select the currently viewed item.
  *
  * SOLUTION:
- * Adds a "Select" toggle button to the media viewer's toolbar menu.
+ * Adds a floating icon button BELOW the header bar in the media viewer.
  * When tapped, it toggles the selection state of the currently displayed
- * image or video. The button icon changes to indicate the current state:
- * - Unselected: outline checkbox (gray)
- * - Selected: filled checkbox (green)
+ * image or video. The icon changes to indicate the current state:
+ * - Unselected: gray circle outline
+ * - Selected: green filled circle with checkmark
  *
- * The button appears in the toolbar (same area as share, delete, etc.),
- * NOT in fullscreen mode. It follows the toolbar show/hide behavior.
+ * The button is NOT inside the 3-dot menu or the toolbar itself — it's
+ * a standalone floating icon positioned below the header bar on the right
+ * side of the screen. It follows the toolbar show/hide behavior
+ * (hidden in fullscreen mode).
  *
  * Implementation:
  * 1. Hook onCreateOptionsMenu — after menu inflation, calls
- *    QuickSelectHelper.addSelectMenuItem() to add the select button
+ *    QuickSelectHelper.addSelectButton() to add the floating button
  * 2. Hook onPrepareOptionsMenu — calls QuickSelectHelper.updateSelectButtonIcon()
  *    to keep the icon in sync when navigating between images
  */
 @Suppress("unused")
 val quickSelectPatch = bytecodePatch(
     name = "Quick select in media viewer",
-    description = "Adds a select/deselect toggle button to the media viewer's " +
-        "toolbar, allowing quick selection of the currently viewed image or video " +
-        "without needing to long-press on the FilmStrip thumbnail.",
+    description = "Adds a select/deselect toggle icon button below the header bar " +
+        "in the media viewer, allowing quick one-tap selection of the currently " +
+        "viewed image or video without needing to long-press on the FilmStrip.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 
@@ -56,12 +53,12 @@ val quickSelectPatch = bytecodePatch(
         val EXTENSION_CLASS = "Lapp/morphe/extension/fstop/QuickSelectHelper;"
 
         // ============================================================
-        // Part 1: Add select menu item after menu inflation
+        // Part 1: Add select button after menu inflation
         // ============================================================
         // Hook onCreateOptionsMenu(ViewImageActivityNew, Menu)
         // After getMenuInflater().inflate(view_image_menu, menu), we inject
-        // a call to QuickSelectHelper.addSelectMenuItem(this, menu) which
-        // adds the select button to the menu.
+        // a call to QuickSelectHelper.addSelectButton(this) which adds
+        // the floating icon button to the activity's content view.
         CreateOptionsMenuFingerprint.method.apply {
             val inflateIndex = implementation!!.instructions.indexOfFirst {
                 it.opcode == Opcode.INVOKE_VIRTUAL &&
@@ -76,8 +73,6 @@ val quickSelectPatch = bytecodePatch(
                 )
             }
 
-            // Find the move-result after inflate (or the next instruction)
-            // We need to inject AFTER the inflate call and its move-result
             var injectIndex = inflateIndex + 1
             val nextInstr = implementation!!.instructions.elementAt(injectIndex)
             if (nextInstr.opcode == Opcode.MOVE_RESULT ||
@@ -87,12 +82,12 @@ val quickSelectPatch = bytecodePatch(
                 injectIndex++
             }
 
-            // At this point, p0 = this (ViewImageActivityNew), p1 = Menu
+            // p0 = this (ViewImageActivityNew)
             addInstructions(
                 injectIndex,
                 """
-                    # Add quick select button to toolbar menu
-                    invoke-static {p0, p1}, $EXTENSION_CLASS->addSelectMenuItem(Landroid/app/Activity;Landroid/view/Menu;)V
+                    # Add quick select floating button below header bar
+                    invoke-static {p0}, $EXTENSION_CLASS->addSelectButton(Landroid/app/Activity;)V
                 """,
             )
         }
@@ -117,7 +112,6 @@ val quickSelectPatch = bytecodePatch(
                 )
             }
 
-            // Inject after the x2() call and its move-result
             var injectIndex = x2Index + 1
             val nextInstr = implementation!!.instructions.elementAt(injectIndex)
             if (nextInstr.opcode == Opcode.MOVE_RESULT ||
@@ -126,12 +120,12 @@ val quickSelectPatch = bytecodePatch(
                 injectIndex++
             }
 
-            // p0 = this (ViewImageActivityNew), p1 = Menu
+            // p0 = this (ViewImageActivityNew)
             addInstructions(
                 injectIndex,
                 """
-                    # Update select button icon to match current selection state
-                    invoke-static {p0, p1}, $EXTENSION_CLASS->updateSelectButtonIcon(Landroid/app/Activity;Landroid/view/Menu;)V
+                    # Update quick select button icon
+                    invoke-static {p0}, $EXTENSION_CLASS->updateSelectButtonIcon(Landroid/app/Activity;)V
                 """,
             )
         }

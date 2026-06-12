@@ -4,19 +4,25 @@ import app.morphe.patcher.Fingerprint
 import com.android.tools.smali.dexlib2.AccessFlags
 
 /**
- * Fingerprint for the N2() method that checks if the F-Stop premium key app is installed.
+ * Fingerprint for the ACTUAL premium check method s3.a.d().
  *
  * From APK decompilation:
- * - Method: Lcom/fstop/photo/p;->N2()Z
+ * - Method: Ls3/a;->d()Z
  * - PUBLIC STATIC, returns boolean, no parameters
- * - Contains const-string "com.fstop.photo.key"
- * - Calls A2(String, Context) which checks if the package is installed
- * - Returns true if the key app is installed (premium unlocked)
+ * - This is THE method that gates ALL premium features (40+ call sites)
+ * - Returns true if ANY of:
+ *   1. checkSignatures("com.fstop.photo", "com.fstop.photo.key") == 0 (same signing key)
+ *   2. b0.f8749z is true (isIAPPurchased from SharedPreferences)
+ *   3. f41680a.size() > 0 (purchasedInAppPurchasesAndSubscriptions set)
  *
- * The patch will replace the return value with true (const/4 vN, 0x1 + return).
+ * IMPORTANT: N2() and x2() in class p are NOT premium gates — they only
+ * control settings UI preferences (show/hide key app icon). The actual
+ * premium feature gating is done exclusively through this method.
+ *
+ * The patch will replace this method body to always return true.
  */
-internal object KeyAppCheckFingerprint : Fingerprint(
-    definingClass = "Lcom/fstop/photo/p;",
+internal object PremiumCheckFingerprint : Fingerprint(
+    definingClass = "Ls3/a;",
     returnType = "Z",
     accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
     parameters = listOf(),
@@ -24,23 +30,22 @@ internal object KeyAppCheckFingerprint : Fingerprint(
 )
 
 /**
- * Fingerprint for the x2() method that checks if the key app's activity is disabled.
+ * Fingerprint for the premium check method without signature verification s3.a.e().
  *
  * From APK decompilation:
- * - Method: Lcom/fstop/photo/p;->x2()Z
+ * - Method: Ls3/a;->e()Z
  * - PUBLIC STATIC, returns boolean, no parameters
- * - Contains const-string "com.fstop.photo.key" and "com.fstop.photo.key.MainActivity"
- * - Checks if the key app's MainActivity component is disabled
- *   (getComponentEnabledSetting == COMPONENT_ENABLED_STATE_DISABLED)
- * - Returns true if the component is disabled (key app is active)
+ * - Same as d() but without the signature check
+ * - Used by the billing system flow
+ * - Returns true if:
+ *   1. b0.f8749z is true (isIAPPurchased)
+ *   2. f41680a.size() > 0 (purchase set)
  *
- * The patch will replace the return value with true (const/4 vN, 0x1 + return).
- * Returning true means "key app's launcher is disabled" = premium is valid.
+ * The patch will replace this method body to always return true.
  */
-internal object KeyAppEnabledCheckFingerprint : Fingerprint(
-    definingClass = "Lcom/fstop/photo/p;",
+internal object PremiumCheckNoSigFingerprint : Fingerprint(
+    definingClass = "Ls3/a;",
     returnType = "Z",
     accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.STATIC),
     parameters = listOf(),
-    strings = listOf("com.fstop.photo.key.MainActivity"),
 )

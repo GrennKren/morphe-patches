@@ -55,7 +55,7 @@ val sideBySidePatch = bytecodePatch(
         "alongside the original. Also updates hardcoded ContentProvider authority " +
         "strings in bytecode to match the new package name. Without these bytecode " +
         "fixes, the app would crash because providers cannot resolve URIs.",
-    default = false,
+    // Default enabled so the patched app can be installed alongside the original
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 

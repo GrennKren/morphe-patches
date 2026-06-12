@@ -5913,7 +5913,7 @@
     },
     {
       "name": "Quick select in media viewer",
-      "description": "Adds a select/deselect toggle button to the media viewer's toolbar, allowing quick selection of the currently viewed image or video without needing to long-press on the FilmStrip thumbnail.",
+      "description": "Adds a select/deselect toggle icon button below the header bar in the media viewer, allowing quick one-tap selection of the currently viewed image or video without needing to long-press on the FilmStrip.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
@@ -6798,7 +6798,7 @@
     {
       "name": "Side-by-side installation",
       "description": "Changes the package name to allow installing the patched app alongside the original. Also updates hardcoded ContentProvider authority strings in bytecode to match the new package name. Without these bytecode fixes, the app would crash because providers cannot resolve URIs.",
-      "default": false,
+      "default": true,
       "dependencies": [
         "ResourcePatch",
         "ResourcePatch"
@@ -7566,7 +7566,7 @@
     },
     {
       "name": "Unlock premium",
-      "description": "Unlocks premium features by making the app think the F-Stop Key app is installed and activated. This bypasses the license verification that checks for the com.fstop.photo.key package. Disabled by default — only enable if you understand the implications.",
+      "description": "Unlocks premium features by bypassing the license verification in s3.a.d(). This is needed even for legitimately purchased keys because the patched APK has a different signing certificate, causing checkSignatures() to fail. Disabled by default.",
       "default": false,
       "dependencies": [],
       "compatiblePackages": [

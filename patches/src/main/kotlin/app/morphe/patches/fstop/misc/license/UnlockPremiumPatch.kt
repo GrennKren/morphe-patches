@@ -11,57 +11,50 @@ import app.morphe.patches.fstop.shared.Constants.COMPATIBILITY_FSTOP
 import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 
 /**
- * Patch to unlock F-Stop premium features without requiring the key app.
+ * Patch to unlock F-Stop premium features.
  *
  * PROBLEM:
- * F-Stop's premium features are gated behind a license key app
- * (com.fstop.photo.key) that must be purchased separately on Google Play.
- * The app checks for the key in two ways:
+ * F-Stop's premium features are gated by s3.a.d() which checks:
+ * 1. Signature match between com.fstop.photo and com.fstop.photo.key
+ * 2. isIAPPurchased flag in SharedPreferences
+ * 3. Non-empty purchasedInAppPurchasesAndSubscriptions set in SharedPreferences
  *
- * 1. p.N2() — Checks if the package "com.fstop.photo.key" is installed
- *    via A2() helper which calls PackageManager.getPackageInfo().
- *    Returns true if installed = premium unlocked.
+ * For patched APKs, the signature check always fails because the patched
+ * app has a different signing certificate than the key app. This means
+ * even users who have legitimately purchased the premium key app will
+ * not have premium features detected.
  *
- * 2. p.x2() — Checks if the key app's MainActivity component is disabled
- *    via PackageManager.getComponentEnabledSetting(). The key app disables
- *    its own launcher activity after activation. Returns true if disabled
- *    = key app was activated = premium valid.
+ * The Google Play IAP flags also won't be set since the patched app
+ * cannot verify purchases through Google Play Billing.
  *
- * These two methods are called throughout the app to determine if premium
- * features should be available.
+ * NOTE: The methods p.N2() and p.x2() that check for the key app package
+ * and component enabled state are NOT premium feature gates — they only
+ * control the "Show/Hide Key App Icon" preference in settings. The actual
+ * premium feature gating is done exclusively through s3.a.d(), which is
+ * called 40+ times across the codebase.
  *
  * SOLUTION:
- * This patch modifies both methods to always return the values that
- * indicate a valid premium license:
- *
- * - N2() → always returns true (key app appears to be installed)
- * - x2() → always returns true (key app's launcher appears disabled = activated)
- *
- * Implementation:
- * For each method, we clear the body and insert simple return instructions.
- * This is safe because these methods are simple boolean checks with no
- * side effects beyond the PackageManager query.
+ * This patch modifies s3.a.d() and s3.a.e() to always return true,
+ * bypassing all three verification checks.
  *
  * WARNING:
- * This patch is disabled by default. Use at your own risk. If you have
- * purchased the premium key app, you do NOT need this patch.
+ * This patch is disabled by default. If you have purchased the premium
+ * key app, this patch is still needed because the patched APK's signature
+ * differs from the original, causing checkSignatures() to fail.
  */
 @Suppress("unused")
 val unlockPremiumPatch = bytecodePatch(
     name = "Unlock premium",
-    description = "Unlocks premium features by making the app think the " +
-        "F-Stop Key app is installed and activated. This bypasses the license " +
-        "verification that checks for the com.fstop.photo.key package. " +
-        "Disabled by default — only enable if you understand the implications.",
+    description = "Unlocks premium features by bypassing the license verification " +
+        "in s3.a.d(). This is needed even for legitimately purchased keys because " +
+        "the patched APK has a different signing certificate, causing " +
+        "checkSignatures() to fail. Disabled by default.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 
     execute {
         // Helper: clear all try-catch blocks from a MutableMethodImplementation.
-        // Without this, removing instructions that are referenced by exception handlers
-        // leaves dangling handler addresses, which causes DEX verification to fail with
-        // "Invalid handler addr" and the entire DEX file becomes unloadable.
         fun clearTryBlocks(impl: MutableMethodImplementation) {
             val field = MutableMethodImplementation::class.java.getDeclaredField("tryBlocks")
             field.isAccessible = true
@@ -71,24 +64,20 @@ val unlockPremiumPatch = bytecodePatch(
         }
 
         // ============================================================
-        // Part 1: Patch N2() to always return true
+        // Part 1: Patch s3.a.d() to always return true
         // ============================================================
-        // Original: calls A2("com.fstop.photo.key", context) which checks
-        // if the key package is installed. Returns true if found.
-        // Patched: always returns true (const/4 v0, 0x1; return v0)
+        // Original: checks signature match + IAP flag + purchase set
+        // Patched: always returns true
 
-        KeyAppCheckFingerprint.method.apply {
+        PremiumCheckFingerprint.method.apply {
             val impl = implementation!!
-            // Clear try-catch blocks FIRST to avoid "Invalid handler addr" DEX errors
             clearTryBlocks(impl)
             val instructions = impl.instructions.toList()
 
-            // Remove all instructions from end to 1
             for (i in instructions.size - 1 downTo 1) {
                 impl.removeInstruction(i)
             }
 
-            // Replace first instruction with: const/4 v0, 0x1; return v0
             addInstructions(
                 0,
                 """
@@ -96,30 +85,24 @@ val unlockPremiumPatch = bytecodePatch(
                     return v0
                 """,
             )
-            // Remove the original first instruction (now at index 2)
             removeInstruction(2)
         }
 
         // ============================================================
-        // Part 2: Patch x2() to always return true
+        // Part 2: Patch s3.a.e() to always return true
         // ============================================================
-        // Original: checks if the key app's component is disabled.
-        // Returns true if disabled (key app was activated).
-        // Patched: always returns true (const/4 v0, 0x1; return v0)
-        // This means "key app is activated" = premium is valid.
+        // Same as d() but without signature check (used by billing flow)
+        // Patched: always returns true
 
-        KeyAppEnabledCheckFingerprint.method.apply {
+        PremiumCheckNoSigFingerprint.method.apply {
             val impl = implementation!!
-            // Clear try-catch blocks FIRST to avoid "Invalid handler addr" DEX errors
             clearTryBlocks(impl)
             val instructions = impl.instructions.toList()
 
-            // Remove all instructions from end to 1
             for (i in instructions.size - 1 downTo 1) {
                 impl.removeInstruction(i)
             }
 
-            // Replace first instruction with: const/4 v0, 0x1; return v0
             addInstructions(
                 0,
                 """
@@ -127,7 +110,6 @@ val unlockPremiumPatch = bytecodePatch(
                     return v0
                 """,
             )
-            // Remove the original first instruction (now at index 2)
             removeInstruction(2)
         }
     }

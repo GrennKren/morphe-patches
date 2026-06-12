@@ -12,8 +12,11 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
-import android.view.Menu;
-import android.view.MenuItem;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 
 import com.fstop.photo.activity.ViewImageActivityNew;
 
@@ -22,97 +25,119 @@ import c3.t;
 /**
  * Helper class for the "Quick Select" feature in F-Stop's media viewer.
  *
- * Adds a select/toggle button to the toolbar menu that allows the user
- * to quickly select/deselect the currently viewed image or video without
- * needing to long-press on the FilmStrip thumbnail.
+ * Adds a select/deselect toggle icon button positioned BELOW the header bar
+ * in the media viewer. This is NOT inside the 3-dot menu or the toolbar itself,
+ * but as a standalone floating icon button that appears below the toolbar area.
  *
- * This is especially useful because:
- * - In the grid view, users must long-press a thumbnail to select it
- * - In the media viewer's FilmStrip, users must also long-press
- * - There was no quick way to select from the toolbar/header area
+ * The button follows the toolbar show/hide behavior:
+ * - Visible when toolbar is shown
+ * - Hidden when in fullscreen mode
+ * - Easy one-tap access to toggle selection
  *
- * The select button appears in the toolbar (NOT in fullscreen mode)
- * and toggles the selection state of the currently displayed media item.
- * Its icon changes to indicate the current selection state:
- * - Unselected: outline checkbox icon
- * - Selected: filled checkbox icon
+ * The icon changes to indicate current selection state:
+ * - Unselected: outline checkbox (gray)
+ * - Selected: filled checkbox with checkmark (green)
  */
 @SuppressWarnings("unused")
 public class QuickSelectHelper {
 
-    /**
-     * Custom menu item ID for the select button.
-     * Uses a value that won't conflict with F-Stop's existing menu IDs.
-     * F-Stop uses IDs in the 0x7F09xxxx range (C0333R.id).
-     * We use 0x7f09fffe as a safe custom ID.
-     */
-    public static final int MENU_ITEM_ID = 0x7f09fffe;
+    private static final int BUTTON_ID = 0x7f09fffe;
 
     /**
-     * Add the select menu item to the toolbar menu.
+     * Add the quick select button to the media viewer layout.
+     * Called from the patched onCreateOptionsMenu (or after setContentView).
      *
-     * Called from the patched onCreateOptionsMenu after the menu is inflated.
-     * Adds a "Select" item that will appear in the toolbar, following
-     * the existing menu style.
-     *
-     * @param activity The ViewImageActivityNew instance
-     * @param menu The toolbar menu to add the item to
+     * Places the button as a floating ImageView below the header bar,
+     * on the right side of the screen.
      */
-    public static void addSelectMenuItem(Activity activity, Menu menu) {
+    public static void addSelectButton(Activity activity) {
         try {
-            MenuItem selectItem = menu.add(
-                Menu.NONE,
-                MENU_ITEM_ID,
-                Menu.FIRST,  // Show at the beginning of the action items
-                "Select"
-            );
+            View existing = activity.findViewById(BUTTON_ID);
+            if (existing != null) {
+                // Already added, just update state
+                updateButtonState(activity, existing);
+                return;
+            }
 
-            // Set the icon based on current selection state
+            // Find the main content view to add our button
+            ViewGroup contentView = activity.findViewById(android.R.id.content);
+            if (contentView == null) return;
+
+            // Create the select button as an ImageView
+            int buttonSize = (int) (40 * activity.getResources().getDisplayMetrics().density);
+            int marginEnd = (int) (12 * activity.getResources().getDisplayMetrics().density);
+            int marginTop = (int) (56 * activity.getResources().getDisplayMetrics().density); // Below standard toolbar height
+
             boolean isSelected = isCurrentItemSelected(activity);
-            selectItem.setIcon(createSelectIcon(activity, isSelected));
-            selectItem.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM);
-            selectItem.setOnMenuItemClickListener(item -> {
+
+            ImageView selectButton = new ImageView(activity);
+            selectButton.setId(BUTTON_ID);
+            selectButton.setImageDrawable(createSelectIcon(activity, isSelected));
+            selectButton.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+            selectButton.setClickable(true);
+            selectButton.setFocusable(true);
+
+            // Set background with ripple effect
+            int[][] states = new int[][] { new int[] { android.R.attr.state_pressed } };
+            int[] colors = new int[] { Color.parseColor("#1A000000") };
+            android.content.res.ColorStateList rippleColor = android.content.res.ColorStateList.valueOf(Color.parseColor("#1A000000"));
+            android.graphics.drawable.RippleDrawable ripple = new android.graphics.drawable.RippleDrawable(
+                rippleColor,
+                createCircleBackground(activity),
+                null
+            );
+            selectButton.setBackground(ripple);
+
+            // Layout params: positioned below toolbar, right side
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(buttonSize, buttonSize);
+            params.gravity = Gravity.END | Gravity.TOP;
+            params.setMargins(0, marginTop, marginEnd, 0);
+
+            selectButton.setOnClickListener(v -> {
                 try {
                     toggleCurrentItemSelection(activity);
-                    // Update icon after toggling
                     boolean nowSelected = isCurrentItemSelected(activity);
-                    item.setIcon(createSelectIcon(activity, nowSelected));
-                } catch (Throwable e) {
-                    // Catch Throwable (not Exception) to handle NoSuchMethodError etc.
-                }
-                return true;
+                    selectButton.setImageDrawable(createSelectIcon(activity, nowSelected));
+                } catch (Throwable ignored) {}
             });
-        } catch (Throwable e) {
-            // Catch Throwable to handle descriptor mismatches gracefully
-        }
+
+            contentView.addView(selectButton, params);
+        } catch (Throwable ignored) {}
     }
 
     /**
      * Update the select button's icon to reflect the current selection state.
-     *
-     * Called from onPrepareOptionsMenu to keep the icon in sync
-     * when the user navigates between images.
-     *
-     * @param activity The ViewImageActivityNew instance
-     * @param menu The toolbar menu
+     * Called from onPrepareOptionsMenu to keep in sync when navigating images.
      */
-    public static void updateSelectButtonIcon(Activity activity, Menu menu) {
+    public static void updateSelectButtonIcon(Activity activity) {
         try {
-            MenuItem selectItem = menu.findItem(MENU_ITEM_ID);
-            if (selectItem != null) {
-                boolean isSelected = isCurrentItemSelected(activity);
-                selectItem.setIcon(createSelectIcon(activity, isSelected));
+            View selectButton = activity.findViewById(BUTTON_ID);
+            if (selectButton instanceof ImageView) {
+                updateButtonState(activity, selectButton);
             }
-        } catch (Throwable e) {
-            // Silently ignore errors
-        }
+        } catch (Throwable ignored) {}
     }
 
     /**
-     * Toggle the selection state of the currently viewed media item.
-     *
-     * @param activity The ViewImageActivityNew instance
+     * Show or hide the select button based on toolbar visibility.
+     * Called when toolbar show/hide state changes.
      */
+    public static void setSelectButtonVisible(Activity activity, boolean visible) {
+        try {
+            View selectButton = activity.findViewById(BUTTON_ID);
+            if (selectButton != null) {
+                selectButton.setVisibility(visible ? View.VISIBLE : View.GONE);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static void updateButtonState(Activity activity, View button) {
+        if (button instanceof ImageView) {
+            boolean isSelected = isCurrentItemSelected(activity);
+            ((ImageView) button).setImageDrawable(createSelectIcon(activity, isSelected));
+        }
+    }
+
     private static void toggleCurrentItemSelection(Activity activity) {
         if (activity instanceof ViewImageActivityNew) {
             ViewImageActivityNew vian = (ViewImageActivityNew) activity;
@@ -124,12 +149,6 @@ public class QuickSelectHelper {
         }
     }
 
-    /**
-     * Check if the currently viewed media item is selected.
-     *
-     * @param activity The ViewImageActivityNew instance
-     * @return true if the current item is selected
-     */
     private static boolean isCurrentItemSelected(Activity activity) {
         try {
             if (activity instanceof ViewImageActivityNew) {
@@ -139,22 +158,29 @@ public class QuickSelectHelper {
                     return currentItem.z();
                 }
             }
-        } catch (Throwable e) {
-            // Silently ignore errors
-        }
+        } catch (Throwable ignored) {}
         return false;
     }
 
     /**
+     * Create a circular background for the button.
+     */
+    private static Drawable createCircleBackground(Context context) {
+        int size = (int) (40 * context.getResources().getDisplayMetrics().density);
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        Paint paint = new Paint();
+        paint.setAntiAlias(true);
+        paint.setColor(Color.parseColor("#0DFFFFFF")); // Very subtle white
+        paint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint);
+        return new BitmapDrawable(context.getResources(), bitmap);
+    }
+
+    /**
      * Create a select/deselect icon as a BitmapDrawable.
-     *
-     * Generates a simple checkbox icon programmatically:
-     * - Unselected: outline square with rounded corners
-     * - Selected: filled square with checkmark
-     *
-     * @param context The context for resource access
-     * @param isSelected Whether to draw the selected variant
-     * @return A Drawable for the menu item icon
+     * - Unselected: outline circle with checkmark outline (gray)
+     * - Selected: filled circle with checkmark (green)
      */
     private static Drawable createSelectIcon(Context context, boolean isSelected) {
         int size = (int) (24 * context.getResources().getDisplayMetrics().density);
@@ -163,57 +189,47 @@ public class QuickSelectHelper {
         Paint paint = new Paint();
         paint.setAntiAlias(true);
 
-        float padding = size * 0.15f;
-        float cornerRadius = size * 0.1f;
+        float cx = size / 2f;
+        float cy = size / 2f;
+        float radius = size * 0.38f;
 
         if (isSelected) {
-            // Selected: filled background with checkmark
+            // Selected: filled circle background
             paint.setColor(Color.parseColor("#4CAF50")); // Green
             paint.setStyle(Paint.Style.FILL);
-            drawRoundRect(canvas, paint, padding, padding,
-                size - padding, size - padding, cornerRadius);
+            canvas.drawCircle(cx, cy, radius, paint);
 
-            // Draw checkmark
+            // Checkmark
             paint.setColor(Color.WHITE);
             paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(size * 0.08f);
+            paint.setStrokeWidth(size * 0.07f);
             paint.setStrokeCap(Paint.Cap.ROUND);
             paint.setStrokeJoin(Paint.Join.ROUND);
 
-            float cx = size / 2f;
-            float cy = size / 2f;
-            float checkSize = size * 0.22f;
-
-            // Checkmark path: bottom-left to center to top-right
+            float checkSize = size * 0.16f;
             canvas.drawLine(
-                cx - checkSize, cy,
-                cx - checkSize * 0.2f, cy + checkSize * 0.6f,
+                cx - checkSize, cy + checkSize * 0.1f,
+                cx - checkSize * 0.15f, cy + checkSize * 0.7f,
                 paint
             );
             canvas.drawLine(
-                cx - checkSize * 0.2f, cy + checkSize * 0.6f,
-                cx + checkSize, cy - checkSize * 0.6f,
+                cx - checkSize * 0.15f, cy + checkSize * 0.7f,
+                cx + checkSize, cy - checkSize * 0.5f,
                 paint
             );
         } else {
-            // Unselected: outline square
+            // Unselected: circle outline
             paint.setColor(Color.parseColor("#B0BEC5")); // Light gray
             paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(size * 0.06f);
-            drawRoundRect(canvas, paint, padding, padding,
-                size - padding, size - padding, cornerRadius);
+            paint.setStrokeWidth(size * 0.05f);
+            canvas.drawCircle(cx, cy, radius, paint);
+
+            // Small dot in center (unselected indicator)
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.parseColor("#90A4AE"));
+            canvas.drawCircle(cx, cy, size * 0.06f, paint);
         }
 
         return new BitmapDrawable(context.getResources(), bitmap);
-    }
-
-    /**
-     * Draw a rounded rectangle on the canvas.
-     */
-    private static void drawRoundRect(Canvas canvas, Paint paint,
-                                       float left, float top,
-                                       float right, float bottom,
-                                       float radius) {
-        canvas.drawRoundRect(left, top, right, bottom, radius, radius, paint);
     }
 }
