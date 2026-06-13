@@ -144,3 +144,35 @@ internal object M3Fingerprint : Fingerprint(
         ),
     ),
 )
+
+/**
+ * Fingerprint for g(I Z)V — the native selection callback in ViewImageActivityNew.
+ *
+ * From androguard bytecode analysis:
+ * - Method: Lcom/fstop/photo/activity/ViewImageActivityNew;->g(I Z)V
+ * - PUBLIC, takes int (index) and boolean (selected), returns void
+ * - Registers: 4 (p0=v1=this, p1=v2=index, p2=v3=selected)
+ * - Gets c3/t item from u0.a ArrayList at index, calls item.X(selected)
+ * - Has try-catch: happy path = goto return-void, catch = printStackTrace
+ *
+ * CALLED FROM: FilmStrip$a.onLongPress() after user long-presses a thumbnail:
+ *   1. Toggle p1.m (thumbnail selected flag)
+ *   2. FilmStrip.invalidate() (redraw)
+ *   3. activity.g(index, p1.m) → THIS METHOD
+ *
+ * This is THE hook point for detecting native selection changes (Direction 2 sync).
+ * When this method is called, c3/t.X() has already been invoked, so z() reflects
+ * the new state. We update the Quick Select button icon accordingly.
+ */
+internal object SelectionCallbackFingerprint : Fingerprint(
+    definingClass = "Lcom/fstop/photo/activity/ViewImageActivityNew;",
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf("I", "Z"),
+    filters = listOf(
+        methodCall(
+            definingClass = "Lc3/t;",
+            name = "X",
+        ),
+    ),
+)

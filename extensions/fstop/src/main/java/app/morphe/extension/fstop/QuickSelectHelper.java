@@ -19,7 +19,6 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 
@@ -32,7 +31,7 @@ import c3.t;
 /**
  * Helper class for the Quick Select patch in F-Stop's media viewer.
  *
- * ARCHITECTURE (v8 — based on comprehensive DEX analysis):
+ * ARCHITECTURE (v9 — proper bidirectional sync via g() hook):
  *
  * SELECTION STATE MODEL (verified from DEX):
  * - c3/t.s (boolean): Per-item selected flag. Set by X(Z)V, read by z()Z.
@@ -44,21 +43,30 @@ import c3.t;
  *   Default false in ViewImageActivityNew! Must set true for checkmarks.
  * - p1.m (boolean): Per-thumbnail selected flag for FilmStrip checkmark drawing.
  *
- * NATIVE SELECTION FLOW (from FilmStrip$a.onLongPress):
- *   1. Toggle p1.m
- *   2. FilmStrip.invalidate()
+ * BIDIRECTIONAL SYNC:
+ * Direction 1 (Button → FilmStrip): Our toggleCurrentItemSelection() sets
+ *   X(!z()), p1.m, FilmStrip.D=true, FilmStrip.invalidate()
+ *
+ * Direction 2 (FilmStrip → Button): Hook g(I Z)V — the native selection
+ *   callback called by FilmStrip$a.onLongPress(). When native selection
+ *   changes (user long-presses thumbnail), g() is called which calls X().
+ *   Our hook onNativeSelectionChange() fires after X(), updating the button.
+ *
+ * NATIVE SELECTION FLOW (from FilmStrip$a.onLongPress, verified from DEX):
+ *   1. Toggle p1.m (thumbnail flag)
+ *   2. FilmStrip.invalidate() (redraw)
  *   3. activity.g(index, p1.m) → c3/t.X(selected)
  *
- * OUR FLOW (replicates native):
+ * OUR FLOW (replicates native for Direction 1):
  *   1. X(!z()) — set per-item selected flag
  *   2. p1.m = newState — set FilmStrip thumbnail flag
- *   3. FilmStrip.D = true — enable checkmark drawing
+ *   3. FilmStrip.D = true — enable checkmark drawing (gated by D in b())
  *   4. FilmStrip.invalidate() — redraw
  *
  * CRITICAL RULES:
  * - Do NOT call c0() — sets L (FAVORITES), causes blank images
  * - Do NOT set b0.H4 — shows crop icon on ALL images
- * - Do NOT call invalidateOptionsMenu() — causes menu refresh issues
+ * - Do NOT call invalidateOptionsMenu() — causes menu refresh loops
  * - Do NOT touch c3/t.g1 — controls image rendering
  * - Do NOT modify ALL p1.m values — causes blank images during page transitions
  */
@@ -130,10 +138,6 @@ public class QuickSelectHelper {
             if (activity instanceof ViewImageActivityNew) {
                 ViewImageActivityNew vian = (ViewImageActivityNew) activity;
                 selectButton.setVisibility(vian.H0 ? View.VISIBLE : View.GONE);
-
-                // Set up bidirectional sync LAZILY — FilmStrip might not exist yet.
-                // Use Handler.post to wait until the view hierarchy is fully created.
-                MAIN_HANDLER.post(() -> setupFilmStripSyncListener(vian));
             }
 
             // Hide unwanted menu items AFTER the entire menu setup is done.
@@ -177,6 +181,37 @@ public class QuickSelectHelper {
                     }
                 } catch (Throwable ignored) {}
             });
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Called when native selection changes (user long-presses a FilmStrip thumbnail).
+     * Hooked from g(I Z)V in ViewImageActivityNew — the callback that
+     * FilmStrip$a.onLongPress() invokes after toggling p1.m.
+     *
+     * When this fires, c3/t.X(selected) has already been called inside g(),
+     * so z() on the affected item reflects the new state.
+     *
+     * BIDIRECTIONAL SYNC — Direction 2: FilmStrip → Quick Select button.
+     */
+    public static void onNativeSelectionChange(Activity activity) {
+        try {
+            // Ensure FilmStrip.D is true so checkmarks are drawn
+            if (activity instanceof ViewImageActivityNew) {
+                ViewImageActivityNew vian = (ViewImageActivityNew) activity;
+                FilmStrip filmStrip = vian.Q0;
+                if (filmStrip != null && !filmStrip.D) {
+                    filmStrip.D = true;
+                    filmStrip.invalidate();
+                }
+            }
+
+            // Update our button icon based on the current item's selection state
+            View selectButton = activity.findViewById(BUTTON_ID);
+            if (selectButton instanceof ImageView) {
+                boolean isSelected = isCurrentItemSelected(activity);
+                ((ImageView) selectButton).setImageDrawable(createSelectIcon(activity, isSelected));
+            }
         } catch (Throwable ignored) {}
     }
 
@@ -269,7 +304,7 @@ public class QuickSelectHelper {
     }
 
     // ========================================================================
-    // FILMSTRIP SYNC
+    // FILMSTRIP SYNC (Direction 1: Button → FilmStrip)
     // ========================================================================
 
     /**
@@ -301,46 +336,6 @@ public class QuickSelectHelper {
                     filmStrip.invalidate();
                 }
             }
-        } catch (Throwable ignored) {}
-    }
-
-    /**
-     * Set up a pre-draw listener on the FilmStrip for bidirectional sync.
-     * This detects when native code changes selection (e.g., long-press on thumbnail).
-     *
-     * IMPORTANT: Called via Handler.post because Q0 might be null during
-     * onCreateOptionsMenu. We need to wait until the view hierarchy is ready.
-     */
-    private static void setupFilmStripSyncListener(ViewImageActivityNew vian) {
-        try {
-            FilmStrip filmStrip = vian.Q0;
-            if (filmStrip == null) {
-                // FilmStrip not ready yet — retry after a delay
-                MAIN_HANDLER.postDelayed(() -> setupFilmStripSyncListener(vian), 500);
-                return;
-            }
-
-            filmStrip.getViewTreeObserver().addOnPreDrawListener(
-                new ViewTreeObserver.OnPreDrawListener() {
-                    private boolean lastKnownState = false;
-
-                    @Override
-                    public boolean onPreDraw() {
-                        try {
-                            boolean currentState = isCurrentItemSelected(vian);
-                            if (currentState != lastKnownState) {
-                                lastKnownState = currentState;
-                                View selectButton = vian.findViewById(BUTTON_ID);
-                                if (selectButton instanceof ImageView) {
-                                    ((ImageView) selectButton).setImageDrawable(
-                                        createSelectIcon(vian, currentState));
-                                }
-                            }
-                        } catch (Throwable ignored) {}
-                        return true;
-                    }
-                }
-            );
         } catch (Throwable ignored) {}
     }
 

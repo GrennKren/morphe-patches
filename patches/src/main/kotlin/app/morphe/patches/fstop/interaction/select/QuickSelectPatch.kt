@@ -21,12 +21,14 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  * 2. Selection indicator: Button icon changes (gray circle outline → green checkmark).
  *    Uses c3.t.z() for reliable state checking.
  *
- * 3. Toggle: Calls X(boolean) AND c0(int) to keep both selection fields in sync.
+ * 3. Toggle: Calls X(boolean) to set per-item selected flag.
+ *    Do NOT call c0(int) — it sets L (FAVORITES), not selection!
  *
- * 4. FilmStrip sync: Uses FilmStrip.e(String) for matching + syncAllFilmStripSelections()
- *    to ensure bidirectional consistency between button and thumbnails.
- *    Also adds a pre-draw listener on the FilmStrip to detect selection changes
- *    made via long-press on thumbnails.
+ * 4. Bidirectional sync:
+ *    Direction 1 (Button → FilmStrip): Set p1.m + FilmStrip.D + invalidate()
+ *    Direction 2 (FilmStrip → Button): Hook g(I Z)V — the native selection callback
+ *    that is called by FilmStrip$a.onLongPress() after user long-presses a thumbnail.
+ *    When g() fires, c3/t.X() has already been called, so z() reflects the new state.
  *
  * 5. Page change: Hooks M3() in ViewImageActivityNew (called from onPageSelected
  *    in inner class $o) to update the button icon immediately when swiping.
@@ -42,6 +44,7 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  * - M3(): Before return-void, calls onPageChanged(Activity)
  * - I2() (hide toolbar): Before return-void, calls onToolbarHidden(Activity)
  * - a4() (show toolbar): Before return-void, calls onToolbarShown(Activity)
+ * - g(I Z) (native selection callback): Before return-void, calls onNativeSelectionChange(Activity)
  */
 @Suppress("unused")
 val quickSelectPatch = bytecodePatch(
@@ -209,6 +212,38 @@ val quickSelectPatch = bytecodePatch(
                 """
                     # Quick Select: show button when toolbar is shown
                     invoke-static {p0}, $EXTENSION_CLASS->onToolbarShown(Landroid/app/Activity;)V
+                """,
+            )
+        }
+
+        // ============================================================
+        // Part 6: Hook g(I Z)V — native selection callback
+        // ============================================================
+        // When user long-presses a FilmStrip thumbnail, FilmStrip$a.onLongPress()
+        // toggles p1.m, invalidates FilmStrip, then calls g(index, selected).
+        // g() calls c3/t.X(selected) on the item at that index.
+        // After X() completes, we update our button icon to reflect the new state.
+        //
+        // g() registers: 4 total, p0=v1=this=ViewImageActivityNew=Activity
+        // Has try-catch: happy path goto→return-void, catch→printStackTrace→return-void
+        SelectionCallbackFingerprint.method.apply {
+            val impl = implementation!!
+
+            val returnIndex = impl.instructions.indexOfLast {
+                it.opcode == Opcode.RETURN_VOID
+            }
+
+            if (returnIndex == -1) {
+                throw PatchException(
+                    "Could not find return-void in g(). The APK version may not be supported."
+                )
+            }
+
+            addInstructions(
+                returnIndex,
+                """
+                    # Quick Select: native selection changed (long-press on thumbnail)
+                    invoke-static {p0}, $EXTENSION_CLASS->onNativeSelectionChange(Landroid/app/Activity;)V
                 """,
             )
         }
