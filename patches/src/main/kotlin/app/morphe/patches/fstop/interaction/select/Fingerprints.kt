@@ -32,10 +32,11 @@ internal object CreateOptionsMenuFingerprint : Fingerprint(
 /**
  * Fingerprint for the onPrepareOptionsMenu method in ViewImageActivityNew.
  *
- * From androguard analysis:
+ * From androguard bytecode analysis:
  * - Method: Lcom/fstop/photo/activity/ViewImageActivityNew;->onPrepareOptionsMenu(Landroid/view/Menu;)Z
  * - PUBLIC, takes Menu parameter, returns boolean
  * - Just calls x2(menu) and returns true
+ * - Registers: 2 (p0=Activity, p1=Menu)
  */
 internal object PrepareOptionsMenuFingerprint : Fingerprint(
     definingClass = "Lcom/fstop/photo/activity/ViewImageActivityNew;",
@@ -107,29 +108,39 @@ internal object ShowToolbarFingerprint : Fingerprint(
 )
 
 /**
- * Fingerprint for onPageSelected in the inner class ViewImageActivityNew$o.
+ * Fingerprint for M3() method in ViewImageActivityNew.
  *
  * From androguard bytecode analysis:
- * - Method: Lcom/fstop/photo/activity/ViewImageActivityNew$o;->onPageSelected(I)V
- * - PUBLIC, takes int parameter (page index), returns void
- * - Called by ViewPager when user swipes between images
- * - Accesses ViewImageActivityNew.u0 (l3.k), calls l3.k.b(I)V
- * - Accesses ViewImageActivityNew.Q0 (FilmStrip), calls FilmStrip.l(I)V or u(I)V
- * - Calls ViewImageActivityNew.M3()V and E3()V
+ * - Method: Lcom/fstop/photo/activity/ViewImageActivityNew;->M3()V
+ * - PUBLIC, no parameters, returns void
+ * - Registers: 4 (p0=v3=this=ViewImageActivityNew)
+ * - Creates Intent, gets current item from u0, puts selectImageId extra
+ * - Calls Activity.setResult(-1, intent)
+ * - Called from onPageSelected in ViewImageActivityNew$o inner class
+ *   (at the END of page change processing, after all UI updates)
  *
- * This is the key method we hook to update the quick select button
- * immediately when the user swipes, without waiting for
- * onPrepareOptionsMenu which may not be called.
+ * Why hook M3() instead of onPageSelected():
+ * - M3() is in ViewImageActivityNew itself, so p0 = this = Activity
+ *   (type-safe, no VerifyError from wrong register types)
+ * - onPageSelected is in inner class $o with only 4 registers,
+ *   and v0 gets reused for different types (FilmStrip vs Activity),
+ *   causing VerifyError when we try to use it as Activity
+ * - M3() is called at the right time (after page change processing completes)
+ * - p0 is ALWAYS ViewImageActivityNew, guaranteed by the method signature
  */
-internal object PageSelectedFingerprint : Fingerprint(
-    definingClass = "Lcom/fstop/photo/activity/ViewImageActivityNew\$o;",
+internal object M3Fingerprint : Fingerprint(
+    definingClass = "Lcom/fstop/photo/activity/ViewImageActivityNew;",
     returnType = "V",
     accessFlags = listOf(AccessFlags.PUBLIC),
-    parameters = listOf("I"),
+    parameters = listOf(),
     filters = listOf(
         methodCall(
-            definingClass = "Lcom/fstop/photo/activity/ViewImageActivityNew;",
-            name = "M3",
+            definingClass = "Landroid/content/Intent;",
+            name = "putExtra",
+        ),
+        methodCall(
+            definingClass = "Landroid/app/Activity;",
+            name = "setResult",
         ),
     ),
 )

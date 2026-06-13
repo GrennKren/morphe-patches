@@ -18,23 +18,30 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  *
  * 1. Auto-hide: Hook I2() and a4() directly to show/hide the button.
  *
- * 2. Selection indicator: Button icon changes (gray circle → green checkmark).
- *    Uses c3.t.z() instead of U() for reliable state checking.
+ * 2. Selection indicator: Button icon changes (gray circle outline → green checkmark).
+ *    Uses c3.t.z() for reliable state checking.
  *
  * 3. Toggle: Calls X(boolean) AND c0(int) to keep both selection fields in sync.
  *
  * 4. FilmStrip sync: Uses FilmStrip.e(String) for matching + syncAllFilmStripSelections()
  *    to ensure bidirectional consistency between button and thumbnails.
+ *    Also adds a pre-draw listener on the FilmStrip to detect selection changes
+ *    made via long-press on thumbnails.
  *
- * 5. Page change: Hooks onPageSelected in ViewImageActivityNew$o inner class
- *    to update the button icon immediately when swiping — no delay.
+ * 5. Page change: Hooks M3() in ViewImageActivityNew (called from onPageSelected
+ *    in inner class $o) to update the button icon immediately when swiping.
+ *    M3() is in ViewImageActivityNew itself, so p0 = this = Activity (type-safe!).
+ *
+ * 6. Native select items: The native savePositionAndZoomMenuItem and
+ *    resetPositionAndZoomMenuItem are hidden since our button replaces their
+ *    selection-related visibility behavior.
  *
  * BYTECODE HOOKS:
- * - onCreateOptionsMenu: After menu inflation, calls addSelectButton()
- * - onPrepareOptionsMenu: After x2(menu), calls updateSelectButtonIcon()
- * - onPageSelected (inner class $o): After M3() call, calls onPageChanged()
- * - I2() (hide toolbar): Before return-void, calls onToolbarHidden()
- * - a4() (show toolbar): Before return-void, calls onToolbarShown()
+ * - onCreateOptionsMenu: After menu inflation, calls addSelectButton(Activity, Menu)
+ * - onPrepareOptionsMenu: After x2(menu), calls updateSelectButtonIcon(Activity, Menu)
+ * - M3(): Before return-void, calls onPageChanged(Activity)
+ * - I2() (hide toolbar): Before return-void, calls onToolbarHidden(Activity)
+ * - a4() (show toolbar): Before return-void, calls onToolbarShown(Activity)
  */
 @Suppress("unused")
 val quickSelectPatch = bytecodePatch(
@@ -78,17 +85,19 @@ val quickSelectPatch = bytecodePatch(
                 injectIndex++
             }
 
+            // onCreateOptionsMenu has registers: 4, p0=v2=Activity, p1=v3=Menu
             addInstructions(
                 injectIndex,
                 """
                     # Add quick select floating button below header bar
-                    invoke-static {p0}, $EXTENSION_CLASS->addSelectButton(Landroid/app/Activity;)V
+                    invoke-static {p0, p1}, $EXTENSION_CLASS->addSelectButton(Landroid/app/Activity;Landroid/view/Menu;)V
                 """,
             )
         }
 
         // ============================================================
         // Part 2: Update select button icon when preparing menu
+        // Also hide native select/deselect menu items since our button replaces them
         // ============================================================
         PrepareOptionsMenuFingerprint.method.apply {
             val x2Index = implementation!!.instructions.indexOfFirst {
@@ -105,62 +114,51 @@ val quickSelectPatch = bytecodePatch(
             }
 
             var injectIndex = x2Index + 1
-            val nextInstr = implementation!!.instructions.elementAt(injectIndex)
-            if (nextInstr.opcode == Opcode.MOVE_RESULT ||
-                nextInstr.opcode == Opcode.MOVE_RESULT_OBJECT
+            val nextInstr = implementation!!.instructions.elementAtOrNull(injectIndex)
+            if (nextInstr != null && (nextInstr.opcode == Opcode.MOVE_RESULT ||
+                    nextInstr.opcode == Opcode.MOVE_RESULT_OBJECT)
             ) {
                 injectIndex++
             }
 
+            // onPrepareOptionsMenu has registers: 2, p0=v0=Activity, p1=v1=Menu
             addInstructions(
                 injectIndex,
                 """
-                    # Update quick select button icon
-                    invoke-static {p0}, $EXTENSION_CLASS->updateSelectButtonIcon(Landroid/app/Activity;)V
+                    # Update quick select button icon and hide native select menu items
+                    invoke-static {p0, p1}, $EXTENSION_CLASS->updateSelectButtonIcon(Landroid/app/Activity;Landroid/view/Menu;)V
                 """,
             )
         }
 
         // ============================================================
-        // Part 3: Hook onPageSelected for instant icon update on swipe
+        // Part 3: Hook M3() for instant icon update on swipe
         // ============================================================
-        // ViewImageActivityNew$o.onPageSelected(I)V is the callback
-        // called by ViewPager when the user swipes to a new page.
-        // It accesses v0 = this.g (ViewImageActivityNew) at index [0].
-        // We hook after M3() call (index [27]) to ensure u0 is updated.
-        PageSelectedFingerprint.method.apply {
+        // ViewImageActivityNew.M3()V is called from onPageSelected in the
+        // inner class $o when the user swipes to a new page.
+        // M3() is on ViewImageActivityNew itself, so p0 = this = Activity.
+        // This is type-safe (no VerifyError) unlike the previous approach
+        // that hooked the inner class where register v0 was reused for
+        // FilmStrip at the injection point.
+        M3Fingerprint.method.apply {
             val impl = implementation!!
 
-            // Find the M3() call — after this, u0 is updated with new position
-            val m3Index = impl.instructions.indexOfFirst {
-                it.opcode == Opcode.INVOKE_VIRTUAL &&
-                    it is ReferenceInstruction &&
-                    it.reference.toString().contains("ViewImageActivityNew;->M3")
+            val returnIndex = impl.instructions.indexOfLast {
+                it.opcode == Opcode.RETURN_VOID
             }
 
-            if (m3Index == -1) {
+            if (returnIndex == -1) {
                 throw PatchException(
-                    "Could not find M3() call in onPageSelected. " +
+                    "Could not find return-void in M3(). " +
                         "The APK version may not be supported."
                 )
             }
 
-            var injectIndex = m3Index + 1
-            val nextInstr = impl.instructions.elementAtOrNull(injectIndex)
-            if (nextInstr != null && (nextInstr.opcode == Opcode.MOVE_RESULT ||
-                    nextInstr.opcode == Opcode.MOVE_RESULT_OBJECT ||
-                    nextInstr.opcode == Opcode.MOVE_RESULT_WIDE)
-            ) {
-                injectIndex++
-            }
-
-            // v0 = this.g (ViewImageActivityNew) — loaded at instruction [0]
-            // We call QuickSelectHelper.onPageChanged(v0)
             addInstructions(
-                injectIndex,
+                returnIndex,
                 """
                     # Quick Select: update button on page change (swipe)
-                    invoke-static {v0}, $EXTENSION_CLASS->onPageChanged(Landroid/app/Activity;)V
+                    invoke-static {p0}, $EXTENSION_CLASS->onPageChanged(Landroid/app/Activity;)V
                 """,
             )
         }
