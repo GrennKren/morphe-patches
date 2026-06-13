@@ -3,20 +3,26 @@
  * Used only at compile time so extension code can reference APK classes.
  *
  * IMPORTANT: Method names MUST match the actual DEX bytecode, NOT the jadx
- * decompiler output. jadx renames obfuscated methods like U() -> z().
- * Always verify method names against dexdump output.
+ * decompiler output. Verified via androguard against actual DEX files.
+ *
+ * Key fields/methods (real DEX names):
+ * - c3.t.L (private int) = selection count, U() returns (L > 0)
+ * - c3.t.s (private boolean) = selected flag, set by X(boolean)
+ * - c3.t.B0 (public int) = set by X(true) to b0.x() value
+ * - c3.t.j (public String) = file path
+ * - c3.t.U()Z = isSelected (returns L > 0)
+ * - c3.t.X(Z)V = setSelected (sets s = val)
  */
 package c3;
 
 @SuppressWarnings("unused")
 public class t {
 
-    public int f5784i;     // _ID
-    public String f5787j;  // file path
+    public String j;  // file path (real DEX name)
 
     /**
      * Check if this item is selected.
-     * Real DEX method name is U() (jadx renamed it to z()).
+     * Real DEX: checks L > 0 (L is private int selection count).
      */
     public boolean U() {
         return false; // stub - isSelected
@@ -24,7 +30,7 @@ public class t {
 
     /**
      * Set the selected state of this item.
-     * Real DEX method name is X(Z)V (same as jadx output).
+     * Real DEX: sets s = selected, if true also sets B0 = b0.x().
      */
     public void X(boolean selected) {
         // stub - setSelected

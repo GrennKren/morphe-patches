@@ -18,6 +18,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 
+import com.fstop.photo.FilmStrip;
 import com.fstop.photo.activity.ViewImageActivityNew;
 
 import c3.t;
@@ -26,24 +27,27 @@ import c3.t;
  * Helper class for the "Quick Select" feature in F-Stop's media viewer.
  *
  * Adds a select/deselect toggle icon button positioned BELOW the header bar
- * in the media viewer. This is NOT inside the 3-dot menu or the toolbar itself,
- * but as a standalone floating icon button that appears below the toolbar area.
+ * in the media viewer. The button:
+ * 1. Auto-hides when toolbar is hidden (fullscreen mode) — via bytecode hooks
+ *    on I2() and a4() methods
+ * 2. Shows selection indicator on the currently viewed image
+ * 3. Functions as a toggle (select/deselect)
+ * 4. Syncs selection state with FilmStrip thumbnails bidirectionally
  *
- * The button follows the toolbar show/hide behavior:
- * - Visible when toolbar is shown
- * - Hidden when in fullscreen mode
- * - Easy one-tap access to toggle selection
- *
- * The icon changes to indicate current selection state:
- * - Unselected: outline circle (gray)
- * - Selected: filled circle with checkmark (green)
- *
- * IMPORTANT: All field/method names match the REAL DEX bytecode, NOT jadx
- * decompiler output. Verified via dexdump against the actual APK.
- * - ViewImageActivityNew.u0 (not f8486u0)
- * - ViewImageActivityNew.L0 (MyAppToolbar — for visibility tracking)
- * - c3.t.U() for isSelected (not z())
- * - c3.t.X(boolean) for setSelected (same name)
+ * IMPORTANT: All field/method names match the REAL DEX bytecode, verified
+ * via androguard against the actual APK DEX files:
+ * - ViewImageActivityNew.u0 = l3.k data holder (public)
+ * - ViewImageActivityNew.H0 = boolean toolbar visibility (public)
+ * - ViewImageActivityNew.Q0 = FilmStrip instance
+ * - ViewImageActivityNew.L0 = MyAppToolbar
+ * - l3.k.o() = getCurrentItem -> c3.t
+ * - c3.t.U()Z = isSelected (checks c3.t.L > 0)
+ * - c3.t.X(Z)V = setSelected (sets c3.t.s = val)
+ * - FilmStrip.l = ArrayList of p1 thumbnails (public)
+ * - FilmStrip.D = boolean selection mode enabled (public)
+ * - FilmStrip.invalidate() = trigger redraw to show checkmarks
+ * - p1.m = boolean selected state for FilmStrip drawing (public)
+ * - b0.r = static Application Context
  */
 @SuppressWarnings("unused")
 public class QuickSelectHelper {
@@ -55,8 +59,8 @@ public class QuickSelectHelper {
      * Called from the patched onCreateOptionsMenu (after menu inflation).
      *
      * Places the button as a floating ImageView below the header bar,
-     * on the right side of the screen. Also sets up a layout listener
-     * on the toolbar to track fullscreen state changes.
+     * on the right side of the screen. Also sets initial visibility
+     * based on current toolbar state (H0 field).
      */
     public static void addSelectButton(Activity activity) {
         try {
@@ -111,10 +115,13 @@ public class QuickSelectHelper {
 
             contentView.addView(selectButton, params);
 
-            // Track toolbar visibility to show/hide the select button
-            // when the user enters/exits fullscreen mode.
-            // L0 is the MyAppToolbar field (real DEX name, verified via dexdump).
-            setupToolbarVisibilityTracking(activity, selectButton);
+            // Set initial visibility based on toolbar state (H0 field)
+            if (activity instanceof ViewImageActivityNew) {
+                ViewImageActivityNew vian = (ViewImageActivityNew) activity;
+                // H0 = true means toolbar is visible (not fullscreen)
+                // H0 = false means toolbar is hidden (fullscreen)
+                selectButton.setVisibility(vian.H0 ? View.VISIBLE : View.GONE);
+            }
         } catch (Throwable ignored) {}
     }
 
@@ -132,126 +139,57 @@ public class QuickSelectHelper {
     }
 
     /**
-     * Show or hide the select button based on toolbar visibility.
-     * This is called from the toolbar visibility listener when the
-     * toolbar is shown or hidden (fullscreen toggle).
+     * Called when toolbar is shown (a4() method invoked).
+     * Makes the quick select button visible.
      */
-    public static void setSelectButtonVisible(Activity activity, boolean toolbarVisible) {
+    public static void onToolbarShown(Activity activity) {
         try {
             View selectButton = activity.findViewById(BUTTON_ID);
             if (selectButton != null) {
-                selectButton.setVisibility(toolbarVisible ? View.VISIBLE : View.GONE);
+                selectButton.setVisibility(View.VISIBLE);
             }
         } catch (Throwable ignored) {}
     }
 
     /**
-     * Set up a layout change listener on the toolbar (L0) to track
-     * when it becomes visible/hidden. This allows the quick select button
-     * to automatically follow the toolbar's visibility in fullscreen mode.
-     *
-     * Uses View.OnLayoutChangeListener which fires whenever the view's
-     * layout changes, including visibility changes.
+     * Called when toolbar is hidden (I2() method invoked).
+     * Makes the quick select button hidden.
      */
-    private static void setupToolbarVisibilityTracking(Activity activity, View selectButton) {
+    public static void onToolbarHidden(Activity activity) {
         try {
-            if (!(activity instanceof ViewImageActivityNew)) return;
-            ViewImageActivityNew vian = (ViewImageActivityNew) activity;
-
-            // L0 is the MyAppToolbar field (real DEX name).
-            // We use reflection to access it since the stub might not
-            // expose it directly, and to avoid coupling to specific
-            // toolbar class names.
-            View toolbar = findToolbarView(vian);
-            if (toolbar != null) {
-                toolbar.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
-                    @Override
-                    public void onLayoutChange(View v, int left, int top, int right,
-                                               int bottom, int oldLeft, int oldTop,
-                                               int oldRight, int oldBottom) {
-                        // When toolbar visibility changes, update select button
-                        boolean toolbarVisible = (v.getVisibility() == View.VISIBLE)
-                            && (v.getHeight() > 0);
-                        selectButton.setVisibility(toolbarVisible ? View.VISIBLE : View.GONE);
-                    }
-                });
+            View selectButton = activity.findViewById(BUTTON_ID);
+            if (selectButton != null) {
+                selectButton.setVisibility(View.GONE);
             }
         } catch (Throwable ignored) {}
-    }
-
-    /**
-     * Find the toolbar view in the activity's view hierarchy.
-     * Tries multiple approaches:
-     * 1. Direct field access via L0 (real DEX name for MyAppToolbar)
-     * 2. Fallback: search by class name in view hierarchy
-     */
-    private static View findToolbarView(Activity activity) {
-        try {
-            if (activity instanceof ViewImageActivityNew) {
-                ViewImageActivityNew vian = (ViewImageActivityNew) activity;
-                // Try to access L0 field via reflection (it's public)
-                try {
-                    java.lang.reflect.Field l0Field =
-                        ViewImageActivityNew.class.getDeclaredField("L0");
-                    Object toolbar = l0Field.get(vian);
-                    if (toolbar instanceof View) {
-                        return (View) toolbar;
-                    }
-                } catch (NoSuchFieldException ignored) {
-                    // Field might have a different name, try fallback
-                }
-            }
-
-            // Fallback: search for MyAppToolbar in the view hierarchy
-            View rootView = activity.findViewById(android.R.id.content);
-            if (rootView == null) return null;
-            return findViewByClassName(rootView, "MyAppToolbar");
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    /**
-     * Recursively search for a view with a specific class name substring.
-     */
-    private static View findViewByClassName(View root, String className) {
-        if (root == null) return null;
-        if (root.getClass().getSimpleName().contains(className)) return root;
-        if (root instanceof ViewGroup) {
-            ViewGroup group = (ViewGroup) root;
-            for (int i = 0; i < group.getChildCount(); i++) {
-                View found = findViewByClassName(group.getChildAt(i), className);
-                if (found != null) return found;
-            }
-        }
-        return null;
-    }
-
-    private static void updateButtonState(Activity activity, View button) {
-        if (button instanceof ImageView) {
-            boolean isSelected = isCurrentItemSelected(activity);
-            ((ImageView) button).setImageDrawable(createSelectIcon(activity, isSelected));
-        }
     }
 
     /**
      * Toggle the selection state of the currently displayed media item.
      *
      * Uses the REAL DEX field/method names:
-     * - ViewImageActivityNew.u0 (l3.k data holder)
+     * - ViewImageActivityNew.u0 (l3.k data holder, public)
      * - l3.k.o() to get current c3.t item
-     * - c3.t.U() to check if selected (real DEX name, jadx renamed to z())
-     * - c3.t.X(boolean) to set selected (same name in DEX and jadx)
+     * - c3.t.U() to check if selected (checks L > 0)
+     * - c3.t.X(boolean) to set selected (sets s = val)
+     *
+     * After toggling, also syncs the FilmStrip thumbnail (p1.m) and
+     * triggers a redraw via FilmStrip.invalidate().
      */
     private static void toggleCurrentItemSelection(Activity activity) {
-        if (activity instanceof ViewImageActivityNew) {
-            ViewImageActivityNew vian = (ViewImageActivityNew) activity;
+        if (!(activity instanceof ViewImageActivityNew)) return;
+        ViewImageActivityNew vian = (ViewImageActivityNew) activity;
+
+        try {
             t currentItem = vian.u0 != null ? vian.u0.o() : null;
-            if (currentItem != null) {
-                boolean isSelected = currentItem.U();  // Real DEX: U()Z, not z()
-                currentItem.X(!isSelected);            // Real DEX: X(Z)V
-            }
-        }
+            if (currentItem == null) return;
+
+            boolean isSelected = currentItem.U();  // Real DEX: U()Z checks L > 0
+            currentItem.X(!isSelected);            // Real DEX: X(Z)V sets s = val
+
+            // Sync FilmStrip thumbnail selection state
+            syncFilmStripSelection(vian, currentItem, !isSelected);
+        } catch (Throwable ignored) {}
     }
 
     /**
@@ -263,11 +201,59 @@ public class QuickSelectHelper {
                 ViewImageActivityNew vian = (ViewImageActivityNew) activity;
                 t currentItem = vian.u0 != null ? vian.u0.o() : null;
                 if (currentItem != null) {
-                    return currentItem.U();  // Real DEX: U()Z, not z()
+                    return currentItem.U();  // Real DEX: U()Z
                 }
             }
         } catch (Throwable ignored) {}
         return false;
+    }
+
+    /**
+     * Sync the FilmStrip thumbnail selection state with c3.t state.
+     *
+     * FilmStrip draws checkmarks based on p1.m (boolean selected),
+     * while the app logic uses c3.t.U()/X() (which checks/sets c3.t.L/s).
+     * We need to keep both in sync for bidirectional selection.
+     *
+     * After updating p1.m, we enable FilmStrip.D (selection mode) and
+     * call invalidate() to trigger a redraw showing the checkmark.
+     */
+    private static void syncFilmStripSelection(ViewImageActivityNew vian, t item, boolean selected) {
+        try {
+            FilmStrip filmStrip = vian.Q0;
+            if (filmStrip == null) return;
+
+            // Enable selection mode in FilmStrip so checkmarks are drawn
+            filmStrip.D = true;
+
+            // Find the matching p1 thumbnail in FilmStrip.l and update its m field
+            java.util.ArrayList thumbnails = filmStrip.l;
+            if (thumbnails == null) return;
+
+            String itemPath = item.j;  // c3.t.j = file path (public String)
+
+            for (int i = 0; i < thumbnails.size(); i++) {
+                Object thumbObj = thumbnails.get(i);
+                if (thumbObj instanceof com.fstop.photo.p1) {
+                    com.fstop.photo.p1 thumb = (com.fstop.photo.p1) thumbObj;
+                    // p1.h = file path string, compare with c3.t.j
+                    if (itemPath != null && itemPath.equals(thumb.h)) {
+                        thumb.m = selected;  // p1.m = boolean selected state
+                        break;
+                    }
+                }
+            }
+
+            // Trigger FilmStrip redraw to show/hide checkmark
+            filmStrip.invalidate();
+        } catch (Throwable ignored) {}
+    }
+
+    private static void updateButtonState(Activity activity, View button) {
+        if (button instanceof ImageView) {
+            boolean isSelected = isCurrentItemSelected(activity);
+            ((ImageView) button).setImageDrawable(createSelectIcon(activity, isSelected));
+        }
     }
 
     /**

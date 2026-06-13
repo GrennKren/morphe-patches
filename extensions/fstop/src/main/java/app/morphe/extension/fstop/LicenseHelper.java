@@ -18,13 +18,12 @@ import android.content.pm.PackageManager;
  * This helper provides an alternative check: simply verify that the key app
  * (com.fstop.photo.key) is installed via getPackageInfo(). This allows
  * legitimate license holders to have their premium status detected without
- * needing the "Unlock premium" bypass patch.
+ * needing the "Unlock Premium" patch.
  *
- * IMPORTANT: This class uses reflection to access ActivityThread (a hidden
- * Android API) to obtain the Application context internally, rather than
- * accepting a Context parameter. This avoids relying on obfuscated field
- * names (like b0.r) from the APK that may differ between decompiler output
- * and the actual DEX bytecode.
+ * Uses b0.r (the static Application Context from the APK itself) to get
+ * the PackageManager. This is the same Context that s3.a.d() uses internally
+ * for its checkSignatures() call, so it is guaranteed to be initialized
+ * by the time our injected code runs.
  */
 @SuppressWarnings("unused")
 public class LicenseHelper {
@@ -39,37 +38,23 @@ public class LicenseHelper {
      * its presence on the device is a reasonable indicator of a legitimate
      * purchase.
      *
-     * This method obtains Context internally via ActivityThread reflection,
-     * avoiding any dependency on obfuscated field names from the APK.
+     * This method obtains Context from b0.r — the same static Application
+     * Context field that s3.a.d() uses for its own checkSignatures() call
+     * at bytecode index #3. Therefore b0.r is guaranteed to be initialized.
      *
+     * @param context the Application context (from b0.r)
      * @return true if the key app is installed, false otherwise
      */
-    public static boolean isKeyAppInstalled() {
+    public static boolean isKeyAppInstalled(Context context) {
+        if (context == null) return false;
         try {
-            // Use reflection to access ActivityThread.currentActivityThread()
-            // since it's a hidden API not in the public Android SDK.
-            // ActivityThread.currentActivityThread().getApplication() returns
-            // the Application context, which we can use to get PackageManager.
-            Class<?> activityThreadClass =
-                Class.forName("android.app.ActivityThread");
-            Object activityThread =
-                activityThreadClass.getMethod("currentActivityThread")
-                    .invoke(null);
-            if (activityThread == null) return false;
-
-            Context context = (Context)
-                activityThreadClass.getMethod("getApplication")
-                    .invoke(activityThread);
-            if (context == null) return false;
-
-            context.getPackageManager()
-                .getPackageInfo(KEY_APP_PACKAGE, 0);
+            context.getPackageManager().getPackageInfo(KEY_APP_PACKAGE, 0);
             return true;
         } catch (PackageManager.NameNotFoundException e) {
             // Key app is not installed — not a premium user
             return false;
         } catch (Throwable ignored) {
-            // Any reflection or runtime error — fail safe (not premium)
+            // Any runtime error — fail safe (not premium)
             return false;
         }
     }

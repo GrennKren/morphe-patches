@@ -24,28 +24,32 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  * Adds a floating icon button BELOW the header bar in the media viewer.
  * When tapped, it toggles the selection state of the currently displayed
  * image or video. The icon changes to indicate the current state:
- * - Unselected: gray circle outline
+ * - Unselected: gray circle outline with dot
  * - Selected: green filled circle with checkmark
  *
- * The button is NOT inside the 3-dot menu or the toolbar itself — it's
- * a standalone floating icon positioned below the header bar on the right
- * side of the screen. It follows the toolbar show/hide behavior
- * (hidden in fullscreen mode) by using a layout change listener on
- * the toolbar view.
+ * IMPLEMENTATION DETAILS:
  *
- * Implementation:
- * 1. Hook onCreateOptionsMenu — after menu inflation, calls
- *    QuickSelectHelper.addSelectButton() which adds the floating button
- *    AND sets up toolbar visibility tracking
- * 2. Hook onPrepareOptionsMenu — calls QuickSelectHelper.updateSelectButtonIcon()
- *    to keep the icon in sync when navigating between images
+ * 1. Auto-hide: Instead of unreliable OnLayoutChangeListener (which doesn't
+ *    fire for AlphaAnimation with setFillAfter(true)), we directly hook the
+ *    bytecode of I2() (hide toolbar) and a4() (show toolbar) to call
+ *    QuickSelectHelper.onToolbarHidden/onToolbarShown. This is guaranteed
+ *    to work because I2()/a4() are the exact methods that control fullscreen.
  *
- * The toolbar visibility tracking is handled internally by QuickSelectHelper
- * using an OnLayoutChangeListener on the toolbar view, so no additional
- * bytecode hooks are needed for fullscreen support.
+ * 2. Selection indicator: The button icon itself changes (gray/green) to
+ *    show the current selection state. Updated in onPrepareOptionsMenu.
  *
- * IMPORTANT: All field/method references in QuickSelectHelper use REAL DEX
- * names verified via dexdump (u0 not f8486u0, U() not z(), etc.)
+ * 3. Toggle: The button calls toggleCurrentItemSelection() which uses
+ *    c3.t.U() to check and c3.t.X() to toggle the selected state.
+ *
+ * 4. FilmStrip sync: After toggling, syncFilmStripSelection() updates the
+ *    corresponding p1.m field and calls FilmStrip.invalidate() to redraw
+ *    the checkmark overlay on the thumbnail.
+ *
+ * BYTECODE HOOKS:
+ * - onCreateOptionsMenu: After menu inflation, calls addSelectButton()
+ * - onPrepareOptionsMenu: After x2(menu), calls updateSelectButtonIcon()
+ * - I2() (hide toolbar): Before return-void, calls onToolbarHidden()
+ * - a4() (show toolbar): Before return-void, calls onToolbarShown()
  */
 @Suppress("unused")
 val quickSelectPatch = bytecodePatch(
@@ -53,7 +57,8 @@ val quickSelectPatch = bytecodePatch(
     description = "Adds a select/deselect toggle icon button below the header bar " +
         "in the media viewer, allowing quick one-tap selection of the currently " +
         "viewed image or video without needing to long-press on the FilmStrip. " +
-        "The button automatically hides in fullscreen mode.",
+        "The button automatically hides in fullscreen mode and syncs selection " +
+        "state with the FilmStrip thumbnails.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 
@@ -65,11 +70,6 @@ val quickSelectPatch = bytecodePatch(
         // ============================================================
         // Part 1: Add select button after menu inflation
         // ============================================================
-        // Hook onCreateOptionsMenu(ViewImageActivityNew, Menu)
-        // After getMenuInflater().inflate(view_image_menu, menu), we inject
-        // a call to QuickSelectHelper.addSelectButton(this) which:
-        //   a) Adds the floating icon button
-        //   b) Sets up toolbar visibility tracking for fullscreen
         CreateOptionsMenuFingerprint.method.apply {
             val inflateIndex = implementation!!.instructions.indexOfFirst {
                 it.opcode == Opcode.INVOKE_VIRTUAL &&
@@ -106,9 +106,6 @@ val quickSelectPatch = bytecodePatch(
         // ============================================================
         // Part 2: Update select button icon when preparing menu
         // ============================================================
-        // Hook onPrepareOptionsMenu(ViewImageActivityNew, Menu)
-        // After x2(menu) call, inject QuickSelectHelper.updateSelectButtonIcon()
-        // to update the icon based on the current item's selection state.
         PrepareOptionsMenuFingerprint.method.apply {
             val x2Index = implementation!!.instructions.indexOfFirst {
                 it.opcode == Opcode.INVOKE_VIRTUAL &&
@@ -137,6 +134,68 @@ val quickSelectPatch = bytecodePatch(
                 """
                     # Update quick select button icon
                     invoke-static {p0}, $EXTENSION_CLASS->updateSelectButtonIcon(Landroid/app/Activity;)V
+                """,
+            )
+        }
+
+        // ============================================================
+        // Part 3: Hook I2() (hide toolbar) to hide quick select button
+        // ============================================================
+        // From androguard bytecode analysis of I2():
+        //   [44] iput-boolean v1, v6, ViewImageActivityNew;->H0 Z  (v1=0, sets H0=false)
+        //   [45] return-void
+        // We inject before return-void: call QuickSelectHelper.onToolbarHidden(this)
+        HideToolbarFingerprint.method.apply {
+            val impl = implementation!!
+
+            // Find the last return-void instruction
+            val returnIndex = impl.instructions.indexOfLast {
+                it.opcode == Opcode.RETURN_VOID
+            }
+
+            if (returnIndex == -1) {
+                throw PatchException(
+                    "Could not find return-void in I2(). The APK version may not be supported."
+                )
+            }
+
+            // Insert before return-void
+            // p0 = this (ViewImageActivityNew, stored in v6 in the original but
+            // p0 always refers to 'this' in a non-static method)
+            addInstructions(
+                returnIndex,
+                """
+                    # Quick Select: hide button when toolbar is hidden
+                    invoke-static {p0}, $EXTENSION_CLASS->onToolbarHidden(Landroid/app/Activity;)V
+                """,
+            )
+        }
+
+        // ============================================================
+        // Part 4: Hook a4() (show toolbar) to show quick select button
+        // ============================================================
+        // From androguard bytecode analysis of a4():
+        //   [42] iput-boolean v2, v7, ViewImageActivityNew;->H0 Z  (v2=1, sets H0=true)
+        //   [43] return-void
+        // We inject before return-void: call QuickSelectHelper.onToolbarShown(this)
+        ShowToolbarFingerprint.method.apply {
+            val impl = implementation!!
+
+            val returnIndex = impl.instructions.indexOfLast {
+                it.opcode == Opcode.RETURN_VOID
+            }
+
+            if (returnIndex == -1) {
+                throw PatchException(
+                    "Could not find return-void in a4(). The APK version may not be supported."
+                )
+            }
+
+            addInstructions(
+                returnIndex,
+                """
+                    # Quick Select: show button when toolbar is shown
+                    invoke-static {p0}, $EXTENSION_CLASS->onToolbarShown(Landroid/app/Activity;)V
                 """,
             )
         }
