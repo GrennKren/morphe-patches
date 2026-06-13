@@ -33,7 +33,7 @@ import c3.t;
 /**
  * Helper class for the Quick Select patch in F-Stop's media viewer.
  *
- * ARCHITECTURE (v10 — native-flow replication for bidirectional sync):
+ * ARCHITECTURE (v11 — fixed button toggle + bidirectional sync):
  *
  * SELECTION STATE MODEL (verified from DEX):
  * - c3/t.s (boolean): Per-item selected flag. Set by X(Z)V, read by z()Z.
@@ -45,7 +45,7 @@ import c3.t;
  * - FilmStrip.l (ArrayList<p1>): Thumbnails list, PARALLEL with u0.a (same index).
  * - p1.m (boolean): Per-thumbnail selected flag for FilmStrip checkmark drawing.
  *
- * BIDIRECTIONAL SYNC (v10 — replicates EXACT native flow):
+ * BIDIRECTIONAL SYNC (v11):
  *
  * NATIVE FLOW (from FilmStrip$a.onLongPress, verified from DEX):
  *   1. f(x, y) → position (1-indexed)
@@ -55,26 +55,22 @@ import c3.t;
  *   5. Cast activity to u3/f interface
  *   6. Call g(index, p1.m) → u0.a.get(index).X(selected)
  *
- * OUR FLOW (Direction 1: Button → FilmStrip, REPLICATES native):
- *   1. Find current item's index in u0.a (parallel with FilmStrip.l)
- *   2. l.get(index) → p1
- *   3. Toggle p1.m
- *   4. FilmStrip.D = true (enable checkmark drawing)
- *   5. FilmStrip.invalidate()
- *   6. Call vian.g(index, p1.m) → same as native step 6
+ * OUR FLOW (Direction 1: Button → FilmStrip):
+ *   1. currentItem.X(!z()) — set per-item selected flag (DIRECTLY, not via g())
+ *   2. Find current item's index in u0.a (parallel with FilmStrip.l)
+ *   3. Get p1 from FilmStrip.l.get(index) directly
+ *   4. Set p1.m = newState
+ *   5. FilmStrip.D = true (enable checkmark drawing)
+ *   6. FilmStrip.requestLayout() + invalidate() (forceful redraw)
+ *   7. Update button icon immediately
+ *
+ *   NOTE: We do NOT call vian.g() because the stub method is EMPTY —
+ *   calling it would do nothing. Instead we call X() directly (same as
+ *   what g() does internally).
  *
  * Direction 2 (FilmStrip → Button):
  *   Hook g(I Z)V — fires after X() is called, updates button icon.
  *   When user long-presses thumbnail, g() is called, our hook updates button.
- *
- * KEY INSIGHT (v10):
- *   Previous versions used e(String) to find p1 by path — this was UNRELIABLE
- *   because c3/t.j and p1.h may not match (different path formats).
- *   Also, invalidate() alone may not trigger redraw if FilmStrip is inside
- *   HorizontalScrollView with drawing cache.
- *   v10 uses DIRECT ArrayList index access (same as native flow) and calls
- *   g() to trigger the full native selection pipeline, AND uses requestLayout()
- *   + invalidate() for more forceful redraw.
  *
  * CRITICAL RULES:
  * - Do NOT call c0() — sets L (FAVORITES), causes blank images
@@ -82,6 +78,7 @@ import c3.t;
  * - Do NOT call invalidateOptionsMenu() — causes menu refresh loops
  * - Do NOT touch c3/t.g1 — controls image rendering
  * - Do NOT modify ALL p1.m values — causes blank images during page transitions
+ * - Do NOT call vian.g() — it's a stub method (empty body)!
  */
 @SuppressWarnings("unused")
 public class QuickSelectHelper {
@@ -140,7 +137,11 @@ public class QuickSelectHelper {
 
             selectButton.setOnClickListener(v -> {
                 try {
+                    boolean wasSelected = isCurrentItemSelected(activity);
                     toggleCurrentItemSelection(activity);
+                    // ALWAYS update icon — even if FilmStrip sync partially fails
+                    boolean nowSelected = isCurrentItemSelected(activity);
+                    ((ImageView) v).setImageDrawable(createSelectIcon(activity, nowSelected));
                 } catch (Throwable ignored) {}
             });
 
@@ -245,21 +246,20 @@ public class QuickSelectHelper {
     }
 
     // ========================================================================
-    // SELECTION LOGIC — replicates EXACT native FilmStrip$a.onLongPress flow
+    // SELECTION LOGIC
     // ========================================================================
 
     /**
      * Toggle selection on the current image.
-     * Replicates the EXACT native flow from FilmStrip$a.onLongPress():
-     *   1. Find current item's index in u0.a (parallel with FilmStrip.l)
-     *   2. Get p1 from FilmStrip.l.get(index)
-     *   3. Toggle p1.m
-     *   4. Set FilmStrip.D = true
-     *   5. FilmStrip.requestLayout() + invalidate() (forceful redraw)
-     *   6. Call vian.g(index, p1.m) — this calls c3/t.X(selected)
+     *
+     * Step 1: Call X(!z()) DIRECTLY on c3/t — this sets the authoritative
+     *         selected flag (s field). Do NOT call g() — it's a stub!
+     * Step 2: Sync FilmStrip thumbnail via direct ArrayList index access.
+     *         Set p1.m + FilmStrip.D + requestLayout() + invalidate()
      *
      * CRITICAL RULES:
-     * - Only call g(index, selected) — do NOT call c0() (sets favorites, not selection)
+     * - Only call X(!z()) directly — do NOT call g() (stub, empty body)
+     * - Only call X(!z()) — do NOT call c0() (sets favorites, not selection)
      * - Do NOT set b0.H4 — it shows crop icon on ALL images
      * - Do NOT call invalidateOptionsMenu() — causes menu refresh loops
      */
@@ -271,53 +271,41 @@ public class QuickSelectHelper {
             t currentItem = vian.u0 != null ? vian.u0.o() : null;
             if (currentItem == null) return;
 
+            // Step 1: Set the per-item selected flag DIRECTLY
+            // (same as what g() does internally: u0.a.get(index).X(selected))
+            boolean wasSelected = currentItem.z();
+            boolean newState = !wasSelected;
+            currentItem.X(newState);
+
+            // Step 2: Sync FilmStrip thumbnail checkmark
             FilmStrip filmStrip = vian.Q0;
-            if (filmStrip == null || filmStrip.l == null) return;
+            if (filmStrip != null && filmStrip.l != null) {
+                // Find current item's index in u0.a (parallel with FilmStrip.l)
+                int currentIndex = findCurrentItemIndex(vian);
+                if (currentIndex >= 0 && currentIndex < filmStrip.l.size()) {
+                    Object thumbObj = filmStrip.l.get(currentIndex);
+                    if (thumbObj instanceof p1) {
+                        p1 thumb = (p1) thumbObj;
+                        thumb.m = newState;
+                    }
+                }
 
-            // Step 1: Find the current item's index in u0.a
-            // FilmStrip.l and u0.a are PARALLEL arrays (verified from DEX:
-            // onLongPress uses same index for l.get() and g() which uses u0.a.get())
-            int currentIndex = findCurrentItemIndex(vian);
-            if (currentIndex < 0) return;
+                // Enable checkmark drawing (required — FilmStrip.b() returns immediately if D=false)
+                filmStrip.D = true;
 
-            // Step 2: Get p1 from FilmStrip.l at the same index (native: l.get(position-1))
-            if (currentIndex >= filmStrip.l.size()) return;
-            Object thumbObj = filmStrip.l.get(currentIndex);
-            if (!(thumbObj instanceof p1)) return;
-            p1 thumb = (p1) thumbObj;
+                // Force redraw — use BOTH requestLayout() and invalidate()
+                filmStrip.requestLayout();
+                filmStrip.invalidate();
 
-            // Step 3: Toggle p1.m (native: xor-int/lit8 v1, v1, 1; iput-boolean v1, v0, p1.m)
-            boolean newState = !thumb.m;
-            thumb.m = newState;
-
-            // Step 4: Enable checkmark drawing (required — FilmStrip.b() returns immediately if D=false)
-            filmStrip.D = true;
-
-            // Step 5: Force redraw — use BOTH requestLayout() and invalidate()
-            // requestLayout() forces a full layout pass which ensures onDraw() is called.
-            // Just invalidate() alone may not trigger redraw if the view is inside
-            // a HorizontalScrollView that has drawing cache enabled.
-            filmStrip.requestLayout();
-            filmStrip.invalidate();
-
-            // Also post a delayed invalidation as a safety net
-            MAIN_HANDLER.postDelayed(() -> {
-                try {
-                    filmStrip.invalidate();
-                } catch (Throwable ignored) {}
-            }, 50);
-
-            // Step 6: Call the native g() method which calls c3/t.X(selected)
-            // This is the same as the native flow: g(index, p1.m)
-            vian.g(currentIndex, newState);
-
-            // Step 7: Update our button icon immediately
-            View selectButton = vian.findViewById(BUTTON_ID);
-            if (selectButton instanceof ImageView) {
-                ((ImageView) selectButton).setImageDrawable(createSelectIcon(vian, newState));
+                // Post a delayed invalidation as a safety net
+                MAIN_HANDLER.postDelayed(() -> {
+                    try {
+                        filmStrip.invalidate();
+                    } catch (Throwable ignored) {}
+                }, 50);
             }
 
-            // Step 8: Re-hide unwanted menu items (x2 may have re-shown them)
+            // Step 3: Re-hide unwanted menu items (x2 may have re-shown them)
             hideUnwantedMenuItems(activity);
 
         } catch (Throwable ignored) {}
@@ -415,15 +403,9 @@ public class QuickSelectHelper {
      * 3. MENU_ITEM_PANEL (0x7F0A0420) — cross-arrow panel toggle (ALWAYS visible,
      *    not controlled by t2 or x2, user explicitly wants it removed)
      * 4. MENU_ITEM_CROP (0x7F0A0241) — crop icon (visible when b0.H4>0, normally hidden)
-     *
-     * This method tries BOTH approaches:
-     * A) Menu.findItem() — standard approach
-     * B) View hierarchy traversal — fallback if findItem doesn't work
      */
     private static void hideUnwantedMenuItems(Activity activity) {
         try {
-            // Try to get the menu from the activity
-            // We can't store the Menu reference, so we find items through the toolbar view
             View toolbar = findToolbarView(activity);
             if (toolbar instanceof ViewGroup) {
                 hideMenuItemsInViewHierarchy((ViewGroup) toolbar);
@@ -434,7 +416,6 @@ public class QuickSelectHelper {
     private static void hideUnwantedMenuItems(Menu menu) {
         if (menu == null) return;
         try {
-            // Try standard approach first
             for (int id : new int[]{MENU_ITEM_1, MENU_ITEM_2, MENU_ITEM_PANEL, MENU_ITEM_CROP}) {
                 MenuItem item = menu.findItem(id);
                 if (item != null) {
@@ -442,7 +423,6 @@ public class QuickSelectHelper {
                 }
             }
 
-            // Also iterate all items to catch any we might have missed
             for (int i = 0; i < menu.size(); i++) {
                 MenuItem item = menu.getItem(i);
                 int id = item.getItemId();
@@ -454,9 +434,6 @@ public class QuickSelectHelper {
         } catch (Throwable ignored) {}
     }
 
-    /**
-     * Find the toolbar/action bar view in the activity's view hierarchy.
-     */
     private static View findToolbarView(Activity activity) {
         try {
             View decorView = activity.getWindow().getDecorView();
@@ -482,25 +459,15 @@ public class QuickSelectHelper {
         return null;
     }
 
-    /**
-     * Try to hide menu items by traversing the toolbar's view hierarchy.
-     * This is a fallback for when Menu.findItem() doesn't work.
-     * We look for ImageViews that might be the cross-arrow icon.
-     */
     private static void hideMenuItemsInViewHierarchy(ViewGroup toolbar) {
         try {
-            // The cross-arrow panel toggle (0x7F0A0420) is likely an ImageButton
-            // or ImageView in the toolbar. We identify it by its content description
-            // or view ID.
             for (int i = 0; i < toolbar.getChildCount(); i++) {
                 View child = toolbar.getChildAt(i);
                 int id = child.getId();
-                // Check if this view has the menu item ID we want to hide
                 if (id == MENU_ITEM_PANEL || id == MENU_ITEM_CROP ||
                     id == MENU_ITEM_1 || id == MENU_ITEM_2) {
                     child.setVisibility(View.GONE);
                 }
-                // Recurse into child ViewGroups (like ActionMenuView)
                 if (child instanceof ViewGroup) {
                     hideMenuItemsInViewHierarchy((ViewGroup) child);
                 }
