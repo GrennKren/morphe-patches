@@ -25,33 +25,71 @@ import android.widget.ImageView;
 
 import com.fstop.photo.FilmStrip;
 import com.fstop.photo.activity.ViewImageActivityNew;
+import com.fstop.photo.p1;
 
 import c3.t;
 
+/**
+ * Helper class for the Quick Select patch in F-Stop's media viewer.
+ *
+ * ARCHITECTURE (v8 — based on comprehensive DEX analysis):
+ *
+ * SELECTION STATE MODEL (verified from DEX):
+ * - c3/t.s (boolean): Per-item selected flag. Set by X(Z)V, read by z()Z.
+ * - c3/t.L (int): FAVORITE counter. DO NOT touch — NOT selection!
+ * - c3/t.S (int): DataSourceType. DO NOT touch — NOT selection!
+ * - b0.H4 (static int): Selection MODE flag. DO NOT SET — setting it shows
+ *   crop icon (2131362433) on ALL images which the user doesn't want!
+ * - FilmStrip.D (boolean): Enables checkmark drawing on thumbnails.
+ *   Default false in ViewImageActivityNew! Must set true for checkmarks.
+ * - p1.m (boolean): Per-thumbnail selected flag for FilmStrip checkmark drawing.
+ *
+ * NATIVE SELECTION FLOW (from FilmStrip$a.onLongPress):
+ *   1. Toggle p1.m
+ *   2. FilmStrip.invalidate()
+ *   3. activity.g(index, p1.m) → c3/t.X(selected)
+ *
+ * OUR FLOW (replicates native):
+ *   1. X(!z()) — set per-item selected flag
+ *   2. p1.m = newState — set FilmStrip thumbnail flag
+ *   3. FilmStrip.D = true — enable checkmark drawing
+ *   4. FilmStrip.invalidate() — redraw
+ *
+ * CRITICAL RULES:
+ * - Do NOT call c0() — sets L (FAVORITES), causes blank images
+ * - Do NOT set b0.H4 — shows crop icon on ALL images
+ * - Do NOT call invalidateOptionsMenu() — causes menu refresh issues
+ * - Do NOT touch c3/t.g1 — controls image rendering
+ * - Do NOT modify ALL p1.m values — causes blank images during page transitions
+ */
 @SuppressWarnings("unused")
 public class QuickSelectHelper {
 
     private static final int BUTTON_ID = 0x7f09fffe;
     private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
 
-    // Native menu item IDs for the select/deselect items that we need to hide.
-    // These are the native "savePositionAndZoomMenuItem" and "resetPositionAndZoomMenuItem"
-    // which are shown/hidden by x2() based on selection state. Since our floating button
-    // replaces their selection-related behavior, we hide them to avoid duplicate UI.
-    // Verified from DEX: x2() at instructions [104-109] and [110-117].
-    private static final int NATIVE_SELECT_ITEM_ID = 2131362771;   // 0x7F0A03D3
-    private static final int NATIVE_DESELECT_ITEM_ID = 2131362729; // 0x7F0A03A9
+    // Menu item IDs to hide (verified from DEX):
+    // 0x7F0A03D3 (2131362771) — controlled by BOTH t2() and x2(). We hide it.
+    // 0x7F0A03A9 (2131362729) — controlled by BOTH t2() and x2(). We hide it.
+    // 0x7F0A0420 (2131362848) — "showHideThumbnailsMenuItem" / panel toggle.
+    //   NOT controlled by t2() or x2() — always visible from menu XML.
+    //   This is the CROSS-ARROW ICON (showAsAction=2). User wants it gone.
+    // 0x7F0A0241 (2131362433) — crop/select item, visible when b0.H4 > 0.
+    //   Normally hidden (H4=-1). Show as backup in case H4 gets set.
+    private static final int MENU_ITEM_1 = 2131362771;   // 0x7F0A03D3
+    private static final int MENU_ITEM_2 = 2131362729;   // 0x7F0A03A9
+    private static final int MENU_ITEM_PANEL = 2131362848; // 0x7F0A0420 (cross-arrow)
+    private static final int MENU_ITEM_CROP = 2131362433;  // 0x7F0A0241 (crop icon)
 
     /**
      * Add the quick select button to the media viewer layout.
-     * Also sets up a pre-draw listener on the FilmStrip for bidirectional sync.
+     * Called from onCreateOptionsMenu hook (after menu inflation).
      */
     public static void addSelectButton(Activity activity, Menu menu) {
         try {
             View existing = activity.findViewById(BUTTON_ID);
             if (existing != null) {
                 updateButtonState(activity, existing);
-                hideNativeSelectItems(menu);
                 return;
             }
 
@@ -70,7 +108,7 @@ public class QuickSelectHelper {
             selectButton.setImageDrawable(createSelectIcon(activity, isSelected));
             selectButton.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
             selectButton.setClickable(true);
-            selectButton.setFocusable(true);
+            selectButton.setFocusable(false);
 
             // Solid white background with dark border for visibility
             selectButton.setBackground(createButtonBackground(activity));
@@ -83,7 +121,7 @@ public class QuickSelectHelper {
                 try {
                     toggleCurrentItemSelection(activity);
                     boolean nowSelected = isCurrentItemSelected(activity);
-                    selectButton.setImageDrawable(createSelectIcon(activity, nowSelected));
+                    ((ImageView) v).setImageDrawable(createSelectIcon(activity, nowSelected));
                 } catch (Throwable ignored) {}
             });
 
@@ -93,20 +131,20 @@ public class QuickSelectHelper {
                 ViewImageActivityNew vian = (ViewImageActivityNew) activity;
                 selectButton.setVisibility(vian.H0 ? View.VISIBLE : View.GONE);
 
-                // Set up bidirectional sync: when FilmStrip is redrawn (e.g., after
-                // long-press selection on a thumbnail), update our button icon.
-                setupFilmStripSyncListener(vian);
+                // Set up bidirectional sync LAZILY — FilmStrip might not exist yet.
+                // Use Handler.post to wait until the view hierarchy is fully created.
+                MAIN_HANDLER.post(() -> setupFilmStripSyncListener(vian));
             }
 
-            // Hide native select/deselect menu items
-            hideNativeSelectItems(menu);
+            // Hide unwanted menu items AFTER the entire menu setup is done.
+            // Use Handler.post to ensure this runs AFTER t2() and x2().
+            MAIN_HANDLER.post(() -> hideUnwantedMenuItems(activity));
         } catch (Throwable ignored) {}
     }
 
     /**
      * Update the select button's icon — called from onPrepareOptionsMenu
-     * AND from M3() hook (via onPageChanged) for instant response on swipe.
-     * Also hides native select/deselect menu items.
+     * and from M3() hook (via onPageChanged) for instant response on swipe.
      */
     public static void updateSelectButtonIcon(Activity activity, Menu menu) {
         try {
@@ -114,27 +152,28 @@ public class QuickSelectHelper {
             if (selectButton instanceof ImageView) {
                 updateButtonState(activity, selectButton);
             }
-            // Hide native select/deselect menu items every time menu is prepared
-            hideNativeSelectItems(menu);
+            // Hide unwanted menu items after x2() has run
+            hideUnwantedMenuItems(menu);
         } catch (Throwable ignored) {}
     }
 
     /**
-     * Called when a page is selected (swipe). Updates button icon immediately
-     * without waiting for onPrepareOptionsMenu.
-     * Hooked from M3() in ViewImageActivityNew (type-safe: p0 = Activity).
+     * Called when a page is selected (swipe). Updates button icon immediately.
+     * Also syncs the current thumbnail's p1.m with c3/t.s.
      */
     public static void onPageChanged(Activity activity) {
         try {
             MAIN_HANDLER.post(() -> {
                 try {
+                    // Update button icon
                     View selectButton = activity.findViewById(BUTTON_ID);
                     if (selectButton instanceof ImageView) {
                         updateButtonState(activity, selectButton);
                     }
-                    // Also sync all FilmStrip thumbnails with c3.t selection state
+
+                    // Sync current thumbnail only
                     if (activity instanceof ViewImageActivityNew) {
-                        syncAllFilmStripSelections((ViewImageActivityNew) activity);
+                        syncCurrentThumbnail((ViewImageActivityNew) activity);
                     }
                 } catch (Throwable ignored) {}
             });
@@ -159,36 +198,127 @@ public class QuickSelectHelper {
         } catch (Throwable ignored) {}
     }
 
+    // ========================================================================
+    // SELECTION LOGIC — replicates native FilmStrip$a.onLongPress flow
+    // ========================================================================
+
     /**
-     * Hide the native select/deselect menu items from the toolbar overflow menu.
-     * These items (savePositionAndZoomMenuItem, resetPositionAndZoomMenuItem)
-     * are shown/hidden by x2() based on selection state. Since our floating
-     * button handles selection, we hide these to avoid duplicate UI.
+     * Toggle selection on the current image.
+     * Replicates the native flow: p1.m toggle + X() call + FilmStrip invalidate.
+     *
+     * CRITICAL RULES:
+     * - Only call X(!z()) — do NOT call c0() (sets favorites, not selection)
+     * - Do NOT set b0.H4 — it shows crop icon on ALL images
+     * - Do NOT call invalidateOptionsMenu() — causes menu refresh loops
      */
-    private static void hideNativeSelectItems(Menu menu) {
-        if (menu == null) return;
+    private static void toggleCurrentItemSelection(Activity activity) {
+        if (!(activity instanceof ViewImageActivityNew)) return;
+        ViewImageActivityNew vian = (ViewImageActivityNew) activity;
+
         try {
-            MenuItem selectItem = menu.findItem(NATIVE_SELECT_ITEM_ID);
-            if (selectItem != null) {
-                selectItem.setVisible(false);
+            t currentItem = vian.u0 != null ? vian.u0.o() : null;
+            if (currentItem == null) return;
+
+            boolean wasSelected = currentItem.z();
+            boolean newState = !wasSelected;
+
+            // Step 1: Set the per-item selected flag (native: g() → X())
+            currentItem.X(newState);
+
+            // Step 2: Update FilmStrip — native flow: p1.m toggle + invalidate
+            FilmStrip filmStrip = vian.Q0;
+            if (filmStrip != null) {
+                // Enable checkmark drawing (required — default is false!)
+                filmStrip.D = true;
+
+                // Update the matching thumbnail's selected flag
+                String itemPath = currentItem.j;
+                if (itemPath != null) {
+                    p1 thumb = filmStrip.e(itemPath);
+                    if (thumb != null) {
+                        thumb.m = newState;
+                    }
+                }
+
+                filmStrip.invalidate();
             }
-            MenuItem deselectItem = menu.findItem(NATIVE_DESELECT_ITEM_ID);
-            if (deselectItem != null) {
-                deselectItem.setVisible(false);
+
+            // Step 3: Update our button icon immediately
+            View selectButton = vian.findViewById(BUTTON_ID);
+            if (selectButton instanceof ImageView) {
+                ((ImageView) selectButton).setImageDrawable(createSelectIcon(vian, newState));
+            }
+
+            // Step 4: Re-hide unwanted menu items (x2 may have re-shown them)
+            hideUnwantedMenuItems(activity);
+
+        } catch (Throwable ignored) {}
+    }
+
+    private static boolean isCurrentItemSelected(Activity activity) {
+        try {
+            if (activity instanceof ViewImageActivityNew) {
+                ViewImageActivityNew vian = (ViewImageActivityNew) activity;
+                t currentItem = vian.u0 != null ? vian.u0.o() : null;
+                if (currentItem != null) {
+                    return currentItem.z();
+                }
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    // ========================================================================
+    // FILMSTRIP SYNC
+    // ========================================================================
+
+    /**
+     * Sync ONLY the current thumbnail's p1.m with c3/t.s.
+     * Called on page change to keep the FilmStrip consistent.
+     * Do NOT sync all thumbnails — causes blank images!
+     */
+    private static void syncCurrentThumbnail(ViewImageActivityNew vian) {
+        try {
+            t currentItem = vian.u0 != null ? vian.u0.o() : null;
+            if (currentItem == null) return;
+
+            FilmStrip filmStrip = vian.Q0;
+            if (filmStrip == null) return;
+
+            boolean currentSelected = currentItem.z();
+
+            // Enable checkmark drawing if current item is selected
+            if (currentSelected) {
+                filmStrip.D = true;
+            }
+
+            // Update current thumbnail's p1.m
+            String itemPath = currentItem.j;
+            if (itemPath != null) {
+                p1 thumb = filmStrip.e(itemPath);
+                if (thumb != null && thumb.m != currentSelected) {
+                    thumb.m = currentSelected;
+                    filmStrip.invalidate();
+                }
             }
         } catch (Throwable ignored) {}
     }
 
     /**
      * Set up a pre-draw listener on the FilmStrip for bidirectional sync.
-     * When the FilmStrip is about to be redrawn (e.g., after a long-press
-     * selection on a thumbnail), we check if the current item's selection
-     * state has changed and update our button accordingly.
+     * This detects when native code changes selection (e.g., long-press on thumbnail).
+     *
+     * IMPORTANT: Called via Handler.post because Q0 might be null during
+     * onCreateOptionsMenu. We need to wait until the view hierarchy is ready.
      */
     private static void setupFilmStripSyncListener(ViewImageActivityNew vian) {
         try {
             FilmStrip filmStrip = vian.Q0;
-            if (filmStrip == null) return;
+            if (filmStrip == null) {
+                // FilmStrip not ready yet — retry after a delay
+                MAIN_HANDLER.postDelayed(() -> setupFilmStripSyncListener(vian), 500);
+                return;
+            }
 
             filmStrip.getViewTreeObserver().addOnPreDrawListener(
                 new ViewTreeObserver.OnPreDrawListener() {
@@ -207,126 +337,122 @@ public class QuickSelectHelper {
                                 }
                             }
                         } catch (Throwable ignored) {}
-                        return true; // don't block the draw
+                        return true;
                     }
                 }
             );
         } catch (Throwable ignored) {}
     }
 
+    // ========================================================================
+    // MENU ITEM HIDING
+    // ========================================================================
+
     /**
-     * Toggle selection — updates BOTH s and L fields, syncs FilmStrip.
+     * Hide unwanted toolbar menu items.
+     *
+     * These items are NOT needed because our floating button handles selection:
+     * 1. MENU_ITEM_1 (0x7F0A03D3) — select/favorite toggle (controlled by t2+x2)
+     * 2. MENU_ITEM_2 (0x7F0A03A9) — sync/unfavorite toggle (controlled by t2+x2)
+     * 3. MENU_ITEM_PANEL (0x7F0A0420) — cross-arrow panel toggle (ALWAYS visible,
+     *    not controlled by t2 or x2, user explicitly wants it removed)
+     * 4. MENU_ITEM_CROP (0x7F0A0241) — crop icon (visible when b0.H4>0, normally hidden)
+     *
+     * This method tries BOTH approaches:
+     * A) Menu.findItem() — standard approach
+     * B) View hierarchy traversal — fallback if findItem doesn't work
      */
-    private static void toggleCurrentItemSelection(Activity activity) {
-        if (!(activity instanceof ViewImageActivityNew)) return;
-        ViewImageActivityNew vian = (ViewImageActivityNew) activity;
-
+    private static void hideUnwantedMenuItems(Activity activity) {
         try {
-            t currentItem = vian.u0 != null ? vian.u0.o() : null;
-            if (currentItem == null) return;
-
-            boolean isSelected = currentItem.z();
-            boolean newState = !isSelected;
-
-            // Update BOTH selection fields to keep them in sync
-            currentItem.X(newState);
-            currentItem.c0(newState ? 1 : 0);
-
-            // Sync FilmStrip: update the current thumbnail's selected flag
-            syncFilmStripSelection(vian, currentItem, newState);
-
-            // Also sync ALL other thumbnails with their c3.t selection state
-            // so the FilmStrip stays consistent with the app's internal state
-            syncAllFilmStripSelections(vian);
+            // Try to get the menu from the activity
+            // We can't store the Menu reference, so we find items through the toolbar view
+            View toolbar = findToolbarView(activity);
+            if (toolbar instanceof ViewGroup) {
+                hideMenuItemsInViewHierarchy((ViewGroup) toolbar);
+            }
         } catch (Throwable ignored) {}
     }
 
-    private static boolean isCurrentItemSelected(Activity activity) {
+    private static void hideUnwantedMenuItems(Menu menu) {
+        if (menu == null) return;
         try {
-            if (activity instanceof ViewImageActivityNew) {
-                ViewImageActivityNew vian = (ViewImageActivityNew) activity;
-                t currentItem = vian.u0 != null ? vian.u0.o() : null;
-                if (currentItem != null) {
-                    return currentItem.z();
-                }
-            }
-        } catch (Throwable ignored) {}
-        return false;
-    }
-
-    /**
-     * Sync a single thumbnail's p1.m with the c3.t selection state.
-     */
-    private static void syncFilmStripSelection(ViewImageActivityNew vian, t item, boolean selected) {
-        try {
-            FilmStrip filmStrip = vian.Q0;
-            if (filmStrip == null) return;
-
-            filmStrip.D = true; // Enable selection mode
-
-            String itemPath = item.j;
-            if (itemPath != null) {
-                Object thumbObj = filmStrip.e(itemPath);
-                if (thumbObj instanceof com.fstop.photo.p1) {
-                    com.fstop.photo.p1 thumb = (com.fstop.photo.p1) thumbObj;
-                    thumb.m = selected;
+            // Try standard approach first
+            for (int id : new int[]{MENU_ITEM_1, MENU_ITEM_2, MENU_ITEM_PANEL, MENU_ITEM_CROP}) {
+                MenuItem item = menu.findItem(id);
+                if (item != null) {
+                    item.setVisible(false);
                 }
             }
 
-            filmStrip.invalidate();
+            // Also iterate all items to catch any we might have missed
+            for (int i = 0; i < menu.size(); i++) {
+                MenuItem item = menu.getItem(i);
+                int id = item.getItemId();
+                if (id == MENU_ITEM_1 || id == MENU_ITEM_2 ||
+                    id == MENU_ITEM_PANEL || id == MENU_ITEM_CROP) {
+                    item.setVisible(false);
+                }
+            }
         } catch (Throwable ignored) {}
     }
 
     /**
-     * Sync ALL FilmStrip thumbnails with their c3.t selection states.
-     * This ensures bidirectional consistency — when the user selects via
-     * the quick select button, ALL FilmStrip thumbnails update, and when
-     * the user long-presses a thumbnail, the quick select button updates
-     * on the next page change.
+     * Find the toolbar/action bar view in the activity's view hierarchy.
      */
-    private static void syncAllFilmStripSelections(ViewImageActivityNew vian) {
+    private static View findToolbarView(Activity activity) {
         try {
-            FilmStrip filmStrip = vian.Q0;
-            if (filmStrip == null || filmStrip.l == null) return;
-
-            java.util.ArrayList thumbnails = filmStrip.l;
-            for (int i = 0; i < thumbnails.size(); i++) {
-                Object thumbObj = thumbnails.get(i);
-                if (thumbObj instanceof com.fstop.photo.p1) {
-                    com.fstop.photo.p1 thumb = (com.fstop.photo.p1) thumbObj;
-                    String thumbPath = thumb.h;
-                    if (thumbPath != null) {
-                        // Find matching c3.t in l3.k.a
-                        t matchItem = findItemByPath(vian, thumbPath);
-                        if (matchItem != null) {
-                            thumb.m = matchItem.z();
-                        }
-                    }
-                }
-            }
-
-            filmStrip.invalidate();
-        } catch (Throwable ignored) {}
-    }
-
-    /**
-     * Find a c3.t item by its file path.
-     * Uses l3.k.a (ArrayList of c3.t media items).
-     */
-    private static t findItemByPath(ViewImageActivityNew vian, String path) {
-        try {
-            if (vian.u0 == null || vian.u0.a == null) return null;
-            java.util.ArrayList items = vian.u0.a;
-            for (int i = 0; i < items.size(); i++) {
-                Object obj = items.get(i);
-                if (obj instanceof t) {
-                    t item = (t) obj;
-                    if (path.equals(item.j)) return item;
-                }
-            }
+            View decorView = activity.getWindow().getDecorView();
+            return findViewByClass(decorView, "android.support.v7.widget.Toolbar",
+                "androidx.appcompat.widget.Toolbar",
+                "android.widget.Toolbar");
         } catch (Throwable ignored) {}
         return null;
     }
+
+    private static View findViewByClass(View root, String... classNames) {
+        if (root == null) return null;
+        for (String className : classNames) {
+            if (root.getClass().getName().equals(className)) return root;
+        }
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View result = findViewByClass(group.getChildAt(i), classNames);
+                if (result != null) return result;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Try to hide menu items by traversing the toolbar's view hierarchy.
+     * This is a fallback for when Menu.findItem() doesn't work.
+     * We look for ImageViews that might be the cross-arrow icon.
+     */
+    private static void hideMenuItemsInViewHierarchy(ViewGroup toolbar) {
+        try {
+            // The cross-arrow panel toggle (0x7F0A0420) is likely an ImageButton
+            // or ImageView in the toolbar. We identify it by its content description
+            // or view ID.
+            for (int i = 0; i < toolbar.getChildCount(); i++) {
+                View child = toolbar.getChildAt(i);
+                int id = child.getId();
+                // Check if this view has the menu item ID we want to hide
+                if (id == MENU_ITEM_PANEL || id == MENU_ITEM_CROP ||
+                    id == MENU_ITEM_1 || id == MENU_ITEM_2) {
+                    child.setVisibility(View.GONE);
+                }
+                // Recurse into child ViewGroups (like ActionMenuView)
+                if (child instanceof ViewGroup) {
+                    hideMenuItemsInViewHierarchy((ViewGroup) child);
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    // ========================================================================
+    // UI HELPERS
+    // ========================================================================
 
     private static void updateButtonState(Activity activity, View button) {
         if (button instanceof ImageView) {
@@ -335,10 +461,6 @@ public class QuickSelectHelper {
         }
     }
 
-    /**
-     * Create a visible button background: solid white circle with dark border.
-     * This ensures the button is clearly visible against any background.
-     */
     private static Drawable createButtonBackground(Context context) {
         int size = (int) (40 * context.getResources().getDisplayMetrics().density);
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
@@ -348,26 +470,19 @@ public class QuickSelectHelper {
 
         float cx = size / 2f;
         float cy = size / 2f;
-        float radius = size / 2f - 2f; // Leave room for border
+        float radius = size / 2f - 2f;
 
-        // Dark border ring (contrast outline)
-        paint.setColor(Color.parseColor("#B0000000")); // Semi-transparent dark
+        paint.setColor(Color.parseColor("#B0000000"));
         paint.setStyle(Paint.Style.FILL);
         canvas.drawCircle(cx, cy, size / 2f - 0.5f, paint);
 
-        // Solid white fill
-        paint.setColor(Color.parseColor("#F5F5F5")); // Off-white
+        paint.setColor(Color.parseColor("#F5F5F5"));
         paint.setStyle(Paint.Style.FILL);
         canvas.drawCircle(cx, cy, radius, paint);
 
         return new BitmapDrawable(context.getResources(), bitmap);
     }
 
-    /**
-     * Create a select/deselect icon as a BitmapDrawable.
-     * - Unselected: simple circle outline (dark gray) — NO cross-arrow, NO dot, nothing else
-     * - Selected: filled green circle with white checkmark
-     */
     private static Drawable createSelectIcon(Context context, boolean isSelected) {
         int size = (int) (24 * context.getResources().getDisplayMetrics().density);
         Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
@@ -380,12 +495,10 @@ public class QuickSelectHelper {
         float radius = size * 0.38f;
 
         if (isSelected) {
-            // Selected: filled green circle
             paint.setColor(Color.parseColor("#4CAF50"));
             paint.setStyle(Paint.Style.FILL);
             canvas.drawCircle(cx, cy, radius, paint);
 
-            // White checkmark
             paint.setColor(Color.WHITE);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(size * 0.08f);
@@ -393,20 +506,12 @@ public class QuickSelectHelper {
             paint.setStrokeJoin(Paint.Join.ROUND);
 
             float checkSize = size * 0.16f;
-            canvas.drawLine(
-                cx - checkSize, cy + checkSize * 0.1f,
-                cx - checkSize * 0.15f, cy + checkSize * 0.7f,
-                paint
-            );
-            canvas.drawLine(
-                cx - checkSize * 0.15f, cy + checkSize * 0.7f,
-                cx + checkSize, cy - checkSize * 0.5f,
-                paint
-            );
+            canvas.drawLine(cx - checkSize, cy + checkSize * 0.1f,
+                cx - checkSize * 0.15f, cy + checkSize * 0.7f, paint);
+            canvas.drawLine(cx - checkSize * 0.15f, cy + checkSize * 0.7f,
+                cx + checkSize, cy - checkSize * 0.5f, paint);
         } else {
-            // Unselected: just a circle outline (dark gray, clearly visible)
-            // NO dot, NO cross-arrow — completely clean
-            paint.setColor(Color.parseColor("#757575")); // Dark gray
+            paint.setColor(Color.parseColor("#757575"));
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(size * 0.07f);
             canvas.drawCircle(cx, cy, radius, paint);
