@@ -30,4 +30,17 @@ public class ViewImageActivityNew extends Activity {
     public void c4(boolean fullscreen) {
         // stub - controls toolbar/fullscreen visibility
     }
+
+    /**
+     * Native selection callback — implements u3/f interface.
+     * Called by FilmStrip$a.onLongPress() after toggling p1.m.
+     * Gets c3/t from u0.a at the given index and calls X(selected).
+     *
+     * VERIFIED from DEX:
+     *   u0.a.get(index) → c3/t → X(selected)
+     *   Has try-catch (IndexOutOfBoundsException).
+     */
+    public void g(int index, boolean selected) {
+        // stub - implements u3/f.g(I Z)V
+    }
 }

@@ -26,42 +26,55 @@ import com.fstop.photo.FilmStrip;
 import com.fstop.photo.activity.ViewImageActivityNew;
 import com.fstop.photo.p1;
 
+import java.util.ArrayList;
+
 import c3.t;
 
 /**
  * Helper class for the Quick Select patch in F-Stop's media viewer.
  *
- * ARCHITECTURE (v9 — proper bidirectional sync via g() hook):
+ * ARCHITECTURE (v10 — native-flow replication for bidirectional sync):
  *
  * SELECTION STATE MODEL (verified from DEX):
  * - c3/t.s (boolean): Per-item selected flag. Set by X(Z)V, read by z()Z.
  * - c3/t.L (int): FAVORITE counter. DO NOT touch — NOT selection!
  * - c3/t.S (int): DataSourceType. DO NOT touch — NOT selection!
- * - b0.H4 (static int): Selection MODE flag. DO NOT SET — setting it shows
- *   crop icon (2131362433) on ALL images which the user doesn't want!
+ * - b0.H4 (static int): Selection MODE flag. DO NOT SET — shows crop icon!
  * - FilmStrip.D (boolean): Enables checkmark drawing on thumbnails.
  *   Default false in ViewImageActivityNew! Must set true for checkmarks.
+ * - FilmStrip.l (ArrayList<p1>): Thumbnails list, PARALLEL with u0.a (same index).
  * - p1.m (boolean): Per-thumbnail selected flag for FilmStrip checkmark drawing.
  *
- * BIDIRECTIONAL SYNC:
- * Direction 1 (Button → FilmStrip): Our toggleCurrentItemSelection() sets
- *   X(!z()), p1.m, FilmStrip.D=true, FilmStrip.invalidate()
+ * BIDIRECTIONAL SYNC (v10 — replicates EXACT native flow):
  *
- * Direction 2 (FilmStrip → Button): Hook g(I Z)V — the native selection
- *   callback called by FilmStrip$a.onLongPress(). When native selection
- *   changes (user long-presses thumbnail), g() is called which calls X().
- *   Our hook onNativeSelectionChange() fires after X(), updating the button.
+ * NATIVE FLOW (from FilmStrip$a.onLongPress, verified from DEX):
+ *   1. f(x, y) → position (1-indexed)
+ *   2. l.get(position - 1) → p1
+ *   3. Toggle p1.m (xor with 1)
+ *   4. FilmStrip.invalidate()
+ *   5. Cast activity to u3/f interface
+ *   6. Call g(index, p1.m) → u0.a.get(index).X(selected)
  *
- * NATIVE SELECTION FLOW (from FilmStrip$a.onLongPress, verified from DEX):
- *   1. Toggle p1.m (thumbnail flag)
- *   2. FilmStrip.invalidate() (redraw)
- *   3. activity.g(index, p1.m) → c3/t.X(selected)
+ * OUR FLOW (Direction 1: Button → FilmStrip, REPLICATES native):
+ *   1. Find current item's index in u0.a (parallel with FilmStrip.l)
+ *   2. l.get(index) → p1
+ *   3. Toggle p1.m
+ *   4. FilmStrip.D = true (enable checkmark drawing)
+ *   5. FilmStrip.invalidate()
+ *   6. Call vian.g(index, p1.m) → same as native step 6
  *
- * OUR FLOW (replicates native for Direction 1):
- *   1. X(!z()) — set per-item selected flag
- *   2. p1.m = newState — set FilmStrip thumbnail flag
- *   3. FilmStrip.D = true — enable checkmark drawing (gated by D in b())
- *   4. FilmStrip.invalidate() — redraw
+ * Direction 2 (FilmStrip → Button):
+ *   Hook g(I Z)V — fires after X() is called, updates button icon.
+ *   When user long-presses thumbnail, g() is called, our hook updates button.
+ *
+ * KEY INSIGHT (v10):
+ *   Previous versions used e(String) to find p1 by path — this was UNRELIABLE
+ *   because c3/t.j and p1.h may not match (different path formats).
+ *   Also, invalidate() alone may not trigger redraw if FilmStrip is inside
+ *   HorizontalScrollView with drawing cache.
+ *   v10 uses DIRECT ArrayList index access (same as native flow) and calls
+ *   g() to trigger the full native selection pipeline, AND uses requestLayout()
+ *   + invalidate() for more forceful redraw.
  *
  * CRITICAL RULES:
  * - Do NOT call c0() — sets L (FAVORITES), causes blank images
@@ -128,8 +141,6 @@ public class QuickSelectHelper {
             selectButton.setOnClickListener(v -> {
                 try {
                     toggleCurrentItemSelection(activity);
-                    boolean nowSelected = isCurrentItemSelected(activity);
-                    ((ImageView) v).setImageDrawable(createSelectIcon(activity, nowSelected));
                 } catch (Throwable ignored) {}
             });
 
@@ -234,15 +245,21 @@ public class QuickSelectHelper {
     }
 
     // ========================================================================
-    // SELECTION LOGIC — replicates native FilmStrip$a.onLongPress flow
+    // SELECTION LOGIC — replicates EXACT native FilmStrip$a.onLongPress flow
     // ========================================================================
 
     /**
      * Toggle selection on the current image.
-     * Replicates the native flow: p1.m toggle + X() call + FilmStrip invalidate.
+     * Replicates the EXACT native flow from FilmStrip$a.onLongPress():
+     *   1. Find current item's index in u0.a (parallel with FilmStrip.l)
+     *   2. Get p1 from FilmStrip.l.get(index)
+     *   3. Toggle p1.m
+     *   4. Set FilmStrip.D = true
+     *   5. FilmStrip.requestLayout() + invalidate() (forceful redraw)
+     *   6. Call vian.g(index, p1.m) — this calls c3/t.X(selected)
      *
      * CRITICAL RULES:
-     * - Only call X(!z()) — do NOT call c0() (sets favorites, not selection)
+     * - Only call g(index, selected) — do NOT call c0() (sets favorites, not selection)
      * - Do NOT set b0.H4 — it shows crop icon on ALL images
      * - Do NOT call invalidateOptionsMenu() — causes menu refresh loops
      */
@@ -254,40 +271,78 @@ public class QuickSelectHelper {
             t currentItem = vian.u0 != null ? vian.u0.o() : null;
             if (currentItem == null) return;
 
-            boolean wasSelected = currentItem.z();
-            boolean newState = !wasSelected;
-
-            // Step 1: Set the per-item selected flag (native: g() → X())
-            currentItem.X(newState);
-
-            // Step 2: Update FilmStrip — native flow: p1.m toggle + invalidate
             FilmStrip filmStrip = vian.Q0;
-            if (filmStrip != null) {
-                // Enable checkmark drawing (required — default is false!)
-                filmStrip.D = true;
+            if (filmStrip == null || filmStrip.l == null) return;
 
-                // Update the matching thumbnail's selected flag
-                String itemPath = currentItem.j;
-                if (itemPath != null) {
-                    p1 thumb = filmStrip.e(itemPath);
-                    if (thumb != null) {
-                        thumb.m = newState;
-                    }
-                }
+            // Step 1: Find the current item's index in u0.a
+            // FilmStrip.l and u0.a are PARALLEL arrays (verified from DEX:
+            // onLongPress uses same index for l.get() and g() which uses u0.a.get())
+            int currentIndex = findCurrentItemIndex(vian);
+            if (currentIndex < 0) return;
 
-                filmStrip.invalidate();
-            }
+            // Step 2: Get p1 from FilmStrip.l at the same index (native: l.get(position-1))
+            if (currentIndex >= filmStrip.l.size()) return;
+            Object thumbObj = filmStrip.l.get(currentIndex);
+            if (!(thumbObj instanceof p1)) return;
+            p1 thumb = (p1) thumbObj;
 
-            // Step 3: Update our button icon immediately
+            // Step 3: Toggle p1.m (native: xor-int/lit8 v1, v1, 1; iput-boolean v1, v0, p1.m)
+            boolean newState = !thumb.m;
+            thumb.m = newState;
+
+            // Step 4: Enable checkmark drawing (required — FilmStrip.b() returns immediately if D=false)
+            filmStrip.D = true;
+
+            // Step 5: Force redraw — use BOTH requestLayout() and invalidate()
+            // requestLayout() forces a full layout pass which ensures onDraw() is called.
+            // Just invalidate() alone may not trigger redraw if the view is inside
+            // a HorizontalScrollView that has drawing cache enabled.
+            filmStrip.requestLayout();
+            filmStrip.invalidate();
+
+            // Also post a delayed invalidation as a safety net
+            MAIN_HANDLER.postDelayed(() -> {
+                try {
+                    filmStrip.invalidate();
+                } catch (Throwable ignored) {}
+            }, 50);
+
+            // Step 6: Call the native g() method which calls c3/t.X(selected)
+            // This is the same as the native flow: g(index, p1.m)
+            vian.g(currentIndex, newState);
+
+            // Step 7: Update our button icon immediately
             View selectButton = vian.findViewById(BUTTON_ID);
             if (selectButton instanceof ImageView) {
                 ((ImageView) selectButton).setImageDrawable(createSelectIcon(vian, newState));
             }
 
-            // Step 4: Re-hide unwanted menu items (x2 may have re-shown them)
+            // Step 8: Re-hide unwanted menu items (x2 may have re-shown them)
             hideUnwantedMenuItems(activity);
 
         } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Find the index of the current item (u0.o()) in u0.a ArrayList.
+     * Returns -1 if not found.
+     * FilmStrip.l and u0.a use the SAME index (verified from DEX).
+     */
+    private static int findCurrentItemIndex(ViewImageActivityNew vian) {
+        try {
+            if (vian.u0 == null) return -1;
+            t currentItem = vian.u0.o();
+            if (currentItem == null) return -1;
+            ArrayList items = vian.u0.a;
+            if (items == null) return -1;
+
+            for (int i = 0; i < items.size(); i++) {
+                if (items.get(i) == currentItem) {
+                    return i;
+                }
+            }
+        } catch (Throwable ignored) {}
+        return -1;
     }
 
     private static boolean isCurrentItemSelected(Activity activity) {
@@ -311,6 +366,9 @@ public class QuickSelectHelper {
      * Sync ONLY the current thumbnail's p1.m with c3/t.s.
      * Called on page change to keep the FilmStrip consistent.
      * Do NOT sync all thumbnails — causes blank images!
+     *
+     * Uses DIRECT ArrayList index access (same as native flow)
+     * instead of e(String) which may fail due to path format mismatch.
      */
     private static void syncCurrentThumbnail(ViewImageActivityNew vian) {
         try {
@@ -318,21 +376,26 @@ public class QuickSelectHelper {
             if (currentItem == null) return;
 
             FilmStrip filmStrip = vian.Q0;
-            if (filmStrip == null) return;
+            if (filmStrip == null || filmStrip.l == null) return;
 
             boolean currentSelected = currentItem.z();
 
             // Enable checkmark drawing if current item is selected
-            if (currentSelected) {
+            if (currentSelected && !filmStrip.D) {
                 filmStrip.D = true;
             }
 
-            // Update current thumbnail's p1.m
-            String itemPath = currentItem.j;
-            if (itemPath != null) {
-                p1 thumb = filmStrip.e(itemPath);
-                if (thumb != null && thumb.m != currentSelected) {
+            // Find the current item's index
+            int currentIndex = findCurrentItemIndex(vian);
+            if (currentIndex < 0 || currentIndex >= filmStrip.l.size()) return;
+
+            // Update current thumbnail's p1.m using same index
+            Object thumbObj = filmStrip.l.get(currentIndex);
+            if (thumbObj instanceof p1) {
+                p1 thumb = (p1) thumbObj;
+                if (thumb.m != currentSelected) {
                     thumb.m = currentSelected;
+                    filmStrip.requestLayout();
                     filmStrip.invalidate();
                 }
             }
