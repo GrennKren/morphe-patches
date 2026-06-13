@@ -60,12 +60,6 @@ internal object PrepareOptionsMenuFingerprint : Fingerprint(
  * - Uses AlphaAnimation(1.0f, 0.0f) with setFillAfter(true) to fade out
  * - Sets system UI visibility flags for fullscreen
  * - Final instruction: iput-boolean v1, v6, H0 Z (v1=0) then return-void
- *
- * Key characteristics for fingerprint matching:
- * - Calls AlphaAnimation.<init>(FF)V
- * - Calls Animation.setFillAfter(Z)V
- * - Accesses ViewImageActivityNew.H0 Z field (iput-boolean)
- * - Calls View.setSystemUiVisibility(I)V
  */
 internal object HideToolbarFingerprint : Fingerprint(
     definingClass = "Lcom/fstop/photo/activity/ViewImageActivityNew;",
@@ -94,13 +88,6 @@ internal object HideToolbarFingerprint : Fingerprint(
  * - Uses AlphaAnimation(0.0f, 1.0f) with setFillAfter(true) to fade in
  * - Clears system UI visibility flags
  * - Final instruction: iput-boolean v2, v7, H0 Z (v2=1) then return-void
- *
- * Key characteristics for fingerprint matching:
- * - Calls AlphaAnimation.<init>(FF)V
- * - Calls Animation.setFillAfter(Z)V
- * - Calls Animation.setFillBefore(Z)V
- * - Accesses ViewImageActivityNew.H0 Z field (iput-boolean)
- * - Calls View.setSystemUiVisibility(I)V with value 0
  */
 internal object ShowToolbarFingerprint : Fingerprint(
     definingClass = "Lcom/fstop/photo/activity/ViewImageActivityNew;",
@@ -115,6 +102,34 @@ internal object ShowToolbarFingerprint : Fingerprint(
         methodCall(
             definingClass = "Landroid/view/animation/Animation;",
             name = "setFillBefore",
+        ),
+    ),
+)
+
+/**
+ * Fingerprint for onPageSelected in the inner class ViewImageActivityNew$o.
+ *
+ * From androguard bytecode analysis:
+ * - Method: Lcom/fstop/photo/activity/ViewImageActivityNew$o;->onPageSelected(I)V
+ * - PUBLIC, takes int parameter (page index), returns void
+ * - Called by ViewPager when user swipes between images
+ * - Accesses ViewImageActivityNew.u0 (l3.k), calls l3.k.b(I)V
+ * - Accesses ViewImageActivityNew.Q0 (FilmStrip), calls FilmStrip.l(I)V or u(I)V
+ * - Calls ViewImageActivityNew.M3()V and E3()V
+ *
+ * This is the key method we hook to update the quick select button
+ * immediately when the user swipes, without waiting for
+ * onPrepareOptionsMenu which may not be called.
+ */
+internal object PageSelectedFingerprint : Fingerprint(
+    definingClass = "Lcom/fstop/photo/activity/ViewImageActivityNew\$o;",
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf("I"),
+    filters = listOf(
+        methodCall(
+            definingClass = "Lcom/fstop/photo/activity/ViewImageActivityNew;",
+            name = "M3",
         ),
     ),
 )

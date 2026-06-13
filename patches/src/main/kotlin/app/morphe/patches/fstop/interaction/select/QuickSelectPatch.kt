@@ -14,46 +14,25 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 /**
  * Patch to add a quick select icon button in F-Stop's media viewer.
  *
- * PROBLEM:
- * In F-Stop's media viewer (ViewImageActivityNew), the only way to select
- * an image or video for batch operations is by long-pressing on thumbnails
- * in the grid view or the FilmStrip. There is no quick one-tap way to
- * select the currently viewed item.
- *
- * SOLUTION:
- * Adds a floating icon button BELOW the header bar in the media viewer.
- * When tapped, it toggles the selection state of the currently displayed
- * image or video. The icon changes to indicate the current state:
- * - Unselected: gray circle outline with dot
- * - Selected: green filled circle with checkmark
- *
  * IMPLEMENTATION DETAILS:
  *
- * 1. Auto-hide: Directly hook the bytecode of I2() (hide toolbar) and
- *    a4() (show toolbar) to call QuickSelectHelper.onToolbarHidden/onToolbarShown.
- *    The previous approach using OnLayoutChangeListener on the toolbar view
- *    doesn't work because F-Stop uses AlphaAnimation with setFillAfter(true)
- *    which does NOT trigger layout change listeners. Hooking I2()/a4() directly
- *    is guaranteed to work because they are the exact methods that control
- *    fullscreen mode.
+ * 1. Auto-hide: Hook I2() and a4() directly to show/hide the button.
  *
- * 2. Selection indicator: The button icon changes (gray circle → green check)
- *    to show the current selection state. Uses c3.t.z() (returns field 's')
- *    instead of c3.t.U() (checks field 'L'), because X() only updates 's'.
- *    Also calls c0() to keep 'L' in sync.
+ * 2. Selection indicator: Button icon changes (gray circle → green checkmark).
+ *    Uses c3.t.z() instead of U() for reliable state checking.
  *
- * 3. Toggle: The button calls toggleCurrentItemSelection() which calls both
- *    X(boolean) to set field 's' AND c0(int) to set field 'L', keeping both
- *    selection indicators in sync with the app's internal state.
+ * 3. Toggle: Calls X(boolean) AND c0(int) to keep both selection fields in sync.
  *
- * 4. FilmStrip sync: After toggling, syncFilmStripSelection() uses
- *    FilmStrip.e(String) to find the matching p1 thumbnail by path,
- *    then updates p1.m and calls FilmStrip.invalidate() to redraw
- *    the checkmark overlay on the thumbnail.
+ * 4. FilmStrip sync: Uses FilmStrip.e(String) for matching + syncAllFilmStripSelections()
+ *    to ensure bidirectional consistency between button and thumbnails.
+ *
+ * 5. Page change: Hooks onPageSelected in ViewImageActivityNew$o inner class
+ *    to update the button icon immediately when swiping — no delay.
  *
  * BYTECODE HOOKS:
  * - onCreateOptionsMenu: After menu inflation, calls addSelectButton()
  * - onPrepareOptionsMenu: After x2(menu), calls updateSelectButtonIcon()
+ * - onPageSelected (inner class $o): After M3() call, calls onPageChanged()
  * - I2() (hide toolbar): Before return-void, calls onToolbarHidden()
  * - a4() (show toolbar): Before return-void, calls onToolbarShown()
  */
@@ -99,7 +78,6 @@ val quickSelectPatch = bytecodePatch(
                 injectIndex++
             }
 
-            // p0 = this (ViewImageActivityNew)
             addInstructions(
                 injectIndex,
                 """
@@ -134,7 +112,6 @@ val quickSelectPatch = bytecodePatch(
                 injectIndex++
             }
 
-            // p0 = this (ViewImageActivityNew)
             addInstructions(
                 injectIndex,
                 """
@@ -145,13 +122,52 @@ val quickSelectPatch = bytecodePatch(
         }
 
         // ============================================================
-        // Part 3: Hook I2() (hide toolbar) to hide quick select button
+        // Part 3: Hook onPageSelected for instant icon update on swipe
         // ============================================================
-        // I2() uses AlphaAnimation with setFillAfter(true) to fade out the
-        // toolbar. OnLayoutChangeListener does NOT fire for this animation,
-        // so we must hook the method directly.
-        // Bytecode pattern: ... iput-boolean v1, v6, H0 Z (v1=0) ... return-void
-        // We inject before return-void: call QuickSelectHelper.onToolbarHidden(this)
+        // ViewImageActivityNew$o.onPageSelected(I)V is the callback
+        // called by ViewPager when the user swipes to a new page.
+        // It accesses v0 = this.g (ViewImageActivityNew) at index [0].
+        // We hook after M3() call (index [27]) to ensure u0 is updated.
+        PageSelectedFingerprint.method.apply {
+            val impl = implementation!!
+
+            // Find the M3() call — after this, u0 is updated with new position
+            val m3Index = impl.instructions.indexOfFirst {
+                it.opcode == Opcode.INVOKE_VIRTUAL &&
+                    it is ReferenceInstruction &&
+                    it.reference.toString().contains("ViewImageActivityNew;->M3")
+            }
+
+            if (m3Index == -1) {
+                throw PatchException(
+                    "Could not find M3() call in onPageSelected. " +
+                        "The APK version may not be supported."
+                )
+            }
+
+            var injectIndex = m3Index + 1
+            val nextInstr = impl.instructions.elementAtOrNull(injectIndex)
+            if (nextInstr != null && (nextInstr.opcode == Opcode.MOVE_RESULT ||
+                    nextInstr.opcode == Opcode.MOVE_RESULT_OBJECT ||
+                    nextInstr.opcode == Opcode.MOVE_RESULT_WIDE)
+            ) {
+                injectIndex++
+            }
+
+            // v0 = this.g (ViewImageActivityNew) — loaded at instruction [0]
+            // We call QuickSelectHelper.onPageChanged(v0)
+            addInstructions(
+                injectIndex,
+                """
+                    # Quick Select: update button on page change (swipe)
+                    invoke-static {v0}, $EXTENSION_CLASS->onPageChanged(Landroid/app/Activity;)V
+                """,
+            )
+        }
+
+        // ============================================================
+        // Part 4: Hook I2() (hide toolbar) to hide quick select button
+        // ============================================================
         HideToolbarFingerprint.method.apply {
             val impl = implementation!!
 
@@ -165,7 +181,6 @@ val quickSelectPatch = bytecodePatch(
                 )
             }
 
-            // p0 = this (ViewImageActivityNew)
             addInstructions(
                 returnIndex,
                 """
@@ -176,12 +191,8 @@ val quickSelectPatch = bytecodePatch(
         }
 
         // ============================================================
-        // Part 4: Hook a4() (show toolbar) to show quick select button
+        // Part 5: Hook a4() (show toolbar) to show quick select button
         // ============================================================
-        // a4() uses AlphaAnimation(0.0f, 1.0f) with setFillAfter(true) to
-        // fade in the toolbar. Same approach as I2().
-        // Bytecode pattern: ... iput-boolean v2, v7, H0 Z (v2=1) ... return-void
-        // We inject before return-void: call QuickSelectHelper.onToolbarShown(this)
         ShowToolbarFingerprint.method.apply {
             val impl = implementation!!
 
