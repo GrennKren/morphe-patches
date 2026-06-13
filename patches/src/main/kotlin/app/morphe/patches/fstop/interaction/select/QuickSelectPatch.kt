@@ -29,20 +29,26 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  *
  * IMPLEMENTATION DETAILS:
  *
- * 1. Auto-hide: Instead of unreliable OnLayoutChangeListener (which doesn't
- *    fire for AlphaAnimation with setFillAfter(true)), we directly hook the
- *    bytecode of I2() (hide toolbar) and a4() (show toolbar) to call
- *    QuickSelectHelper.onToolbarHidden/onToolbarShown. This is guaranteed
- *    to work because I2()/a4() are the exact methods that control fullscreen.
+ * 1. Auto-hide: Directly hook the bytecode of I2() (hide toolbar) and
+ *    a4() (show toolbar) to call QuickSelectHelper.onToolbarHidden/onToolbarShown.
+ *    The previous approach using OnLayoutChangeListener on the toolbar view
+ *    doesn't work because F-Stop uses AlphaAnimation with setFillAfter(true)
+ *    which does NOT trigger layout change listeners. Hooking I2()/a4() directly
+ *    is guaranteed to work because they are the exact methods that control
+ *    fullscreen mode.
  *
- * 2. Selection indicator: The button icon itself changes (gray/green) to
- *    show the current selection state. Updated in onPrepareOptionsMenu.
+ * 2. Selection indicator: The button icon changes (gray circle → green check)
+ *    to show the current selection state. Uses c3.t.z() (returns field 's')
+ *    instead of c3.t.U() (checks field 'L'), because X() only updates 's'.
+ *    Also calls c0() to keep 'L' in sync.
  *
- * 3. Toggle: The button calls toggleCurrentItemSelection() which uses
- *    c3.t.U() to check and c3.t.X() to toggle the selected state.
+ * 3. Toggle: The button calls toggleCurrentItemSelection() which calls both
+ *    X(boolean) to set field 's' AND c0(int) to set field 'L', keeping both
+ *    selection indicators in sync with the app's internal state.
  *
- * 4. FilmStrip sync: After toggling, syncFilmStripSelection() updates the
- *    corresponding p1.m field and calls FilmStrip.invalidate() to redraw
+ * 4. FilmStrip sync: After toggling, syncFilmStripSelection() uses
+ *    FilmStrip.e(String) to find the matching p1 thumbnail by path,
+ *    then updates p1.m and calls FilmStrip.invalidate() to redraw
  *    the checkmark overlay on the thumbnail.
  *
  * BYTECODE HOOKS:
@@ -141,14 +147,14 @@ val quickSelectPatch = bytecodePatch(
         // ============================================================
         // Part 3: Hook I2() (hide toolbar) to hide quick select button
         // ============================================================
-        // From androguard bytecode analysis of I2():
-        //   [44] iput-boolean v1, v6, ViewImageActivityNew;->H0 Z  (v1=0, sets H0=false)
-        //   [45] return-void
+        // I2() uses AlphaAnimation with setFillAfter(true) to fade out the
+        // toolbar. OnLayoutChangeListener does NOT fire for this animation,
+        // so we must hook the method directly.
+        // Bytecode pattern: ... iput-boolean v1, v6, H0 Z (v1=0) ... return-void
         // We inject before return-void: call QuickSelectHelper.onToolbarHidden(this)
         HideToolbarFingerprint.method.apply {
             val impl = implementation!!
 
-            // Find the last return-void instruction
             val returnIndex = impl.instructions.indexOfLast {
                 it.opcode == Opcode.RETURN_VOID
             }
@@ -159,9 +165,7 @@ val quickSelectPatch = bytecodePatch(
                 )
             }
 
-            // Insert before return-void
-            // p0 = this (ViewImageActivityNew, stored in v6 in the original but
-            // p0 always refers to 'this' in a non-static method)
+            // p0 = this (ViewImageActivityNew)
             addInstructions(
                 returnIndex,
                 """
@@ -174,9 +178,9 @@ val quickSelectPatch = bytecodePatch(
         // ============================================================
         // Part 4: Hook a4() (show toolbar) to show quick select button
         // ============================================================
-        // From androguard bytecode analysis of a4():
-        //   [42] iput-boolean v2, v7, ViewImageActivityNew;->H0 Z  (v2=1, sets H0=true)
-        //   [43] return-void
+        // a4() uses AlphaAnimation(0.0f, 1.0f) with setFillAfter(true) to
+        // fade in the toolbar. Same approach as I2().
+        // Bytecode pattern: ... iput-boolean v2, v7, H0 Z (v2=1) ... return-void
         // We inject before return-void: call QuickSelectHelper.onToolbarShown(this)
         ShowToolbarFingerprint.method.apply {
             val impl = implementation!!

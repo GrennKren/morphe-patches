@@ -30,24 +30,53 @@ import c3.t;
  * in the media viewer. The button:
  * 1. Auto-hides when toolbar is hidden (fullscreen mode) — via bytecode hooks
  *    on I2() and a4() methods
- * 2. Shows selection indicator on the currently viewed image
+ * 2. Shows selection indicator on the currently viewed image (icon changes)
  * 3. Functions as a toggle (select/deselect)
  * 4. Syncs selection state with FilmStrip thumbnails bidirectionally
  *
- * IMPORTANT: All field/method names match the REAL DEX bytecode, verified
- * via androguard against the actual APK DEX files:
- * - ViewImageActivityNew.u0 = l3.k data holder (public)
- * - ViewImageActivityNew.H0 = boolean toolbar visibility (public)
- * - ViewImageActivityNew.Q0 = FilmStrip instance
- * - ViewImageActivityNew.L0 = MyAppToolbar
- * - l3.k.o() = getCurrentItem -> c3.t
- * - c3.t.U()Z = isSelected (checks c3.t.L > 0)
- * - c3.t.X(Z)V = setSelected (sets c3.t.s = val)
+ * CRITICAL DEX FINDINGS (verified via androguard bytecode analysis):
+ *
+ * c3.t has TWO selection state fields that must be kept in sync:
+ * - c3.t.s (boolean, private) — the authoritative selected flag
+ * - c3.t.L (int, private) — used by U() to check if L > 0
+ *
+ * c3.t methods:
+ * - z()Z: returns field s (boolean selected) — RELIABLE for checking
+ * - Q()Z: also returns field s (same as z())
+ * - U()Z: returns (L > 0) — checks the int field, NOT s!
+ * - X(Z)V: sets s = val, and if selecting, also calls b0.x() and sets B0
+ * - c0(I)V: sets L = val
+ *
+ * BUG IN PREVIOUS VERSION: toggleCurrentItemSelection() called X(!isSelected)
+ * which only sets field 's', but isCurrentItemSelected() used U() which checks
+ * field 'L'. Since L was never updated by X(), U() always returned the same
+ * value, making the selection indicator appear broken.
+ *
+ * FIX: Use z() for checking selection (returns 's' which IS updated by X()),
+ * and also call c0() when toggling to keep L in sync (so other app code
+ * that uses U() also sees the correct state).
+ *
+ * FilmStrip fields/methods:
  * - FilmStrip.l = ArrayList of p1 thumbnails (public)
  * - FilmStrip.D = boolean selection mode enabled (public)
- * - FilmStrip.invalidate() = trigger redraw to show checkmarks
- * - p1.m = boolean selected state for FilmStrip drawing (public)
- * - b0.r = static Application Context
+ * - FilmStrip.e(String)p1 = finds thumbnail by file path
+ * - FilmStrip.invalidate() = trigger redraw
+ *
+ * p1 fields:
+ * - p1.h = String file path
+ * - p1.m = boolean selected state (used for drawing checkmarks)
+ * - p1.b() = returns h (file path)
+ *
+ * ViewImageActivityNew fields:
+ * - u0 = l3.k data holder (public)
+ * - H0 = boolean toolbar visibility (public)
+ * - Q0 = FilmStrip instance
+ *
+ * l3.k methods:
+ * - o()Lc3/t; = gets current c3.t item (based on index field f)
+ *
+ * b0 fields:
+ * - r = static Application Context
  */
 @SuppressWarnings("unused")
 public class QuickSelectHelper {
@@ -57,28 +86,21 @@ public class QuickSelectHelper {
     /**
      * Add the quick select button to the media viewer layout.
      * Called from the patched onCreateOptionsMenu (after menu inflation).
-     *
-     * Places the button as a floating ImageView below the header bar,
-     * on the right side of the screen. Also sets initial visibility
-     * based on current toolbar state (H0 field).
      */
     public static void addSelectButton(Activity activity) {
         try {
             View existing = activity.findViewById(BUTTON_ID);
             if (existing != null) {
-                // Already added, just update state
                 updateButtonState(activity, existing);
                 return;
             }
 
-            // Find the main content view to add our button
             ViewGroup contentView = activity.findViewById(android.R.id.content);
             if (contentView == null) return;
 
-            // Create the select button as an ImageView
             int buttonSize = (int) (40 * activity.getResources().getDisplayMetrics().density);
             int marginEnd = (int) (12 * activity.getResources().getDisplayMetrics().density);
-            int marginTop = (int) (56 * activity.getResources().getDisplayMetrics().density); // Below standard toolbar height
+            int marginTop = (int) (56 * activity.getResources().getDisplayMetrics().density);
 
             boolean isSelected = isCurrentItemSelected(activity);
 
@@ -89,7 +111,7 @@ public class QuickSelectHelper {
             selectButton.setClickable(true);
             selectButton.setFocusable(true);
 
-            // Set background with ripple effect
+            // Ripple background
             android.content.res.ColorStateList rippleColor =
                 android.content.res.ColorStateList.valueOf(Color.parseColor("#1A000000"));
             android.graphics.drawable.RippleDrawable ripple =
@@ -100,7 +122,6 @@ public class QuickSelectHelper {
                 );
             selectButton.setBackground(ripple);
 
-            // Layout params: positioned below toolbar, right side
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(buttonSize, buttonSize);
             params.gravity = Gravity.END | Gravity.TOP;
             params.setMargins(0, marginTop, marginEnd, 0);
@@ -118,8 +139,6 @@ public class QuickSelectHelper {
             // Set initial visibility based on toolbar state (H0 field)
             if (activity instanceof ViewImageActivityNew) {
                 ViewImageActivityNew vian = (ViewImageActivityNew) activity;
-                // H0 = true means toolbar is visible (not fullscreen)
-                // H0 = false means toolbar is hidden (fullscreen)
                 selectButton.setVisibility(vian.H0 ? View.VISIBLE : View.GONE);
             }
         } catch (Throwable ignored) {}
@@ -167,14 +186,17 @@ public class QuickSelectHelper {
     /**
      * Toggle the selection state of the currently displayed media item.
      *
-     * Uses the REAL DEX field/method names:
-     * - ViewImageActivityNew.u0 (l3.k data holder, public)
-     * - l3.k.o() to get current c3.t item
-     * - c3.t.U() to check if selected (checks L > 0)
-     * - c3.t.X(boolean) to set selected (sets s = val)
+     * CRITICAL: We must update BOTH fields to keep selection state consistent:
+     * 1. Call X(boolean) to set field 's' (the authoritative boolean flag)
+     *    — X() also sets B0 when selecting (calls b0.x())
+     * 2. Call c0(int) to set field 'L' (the int counter used by U())
+     *    — c0(1) when selecting (positive = selected per U())
+     *    — c0(0) when deselecting (0 = not selected per U())
      *
-     * After toggling, also syncs the FilmStrip thumbnail (p1.m) and
-     * triggers a redraw via FilmStrip.invalidate().
+     * If we only call X() without c0(), other app code that uses U() to check
+     * selection (including the toolbar selection count display) will not see
+     * the change, and our own isCurrentItemSelected() using z() will show the
+     * correct state while the rest of the app disagrees.
      */
     private static void toggleCurrentItemSelection(Activity activity) {
         if (!(activity instanceof ViewImageActivityNew)) return;
@@ -184,16 +206,27 @@ public class QuickSelectHelper {
             t currentItem = vian.u0 != null ? vian.u0.o() : null;
             if (currentItem == null) return;
 
-            boolean isSelected = currentItem.U();  // Real DEX: U()Z checks L > 0
-            currentItem.X(!isSelected);            // Real DEX: X(Z)V sets s = val
+            // Use z() to check selection — returns field 's' which is the
+            // authoritative boolean flag. U() checks field 'L' which may
+            // not be in sync if previous toggles didn't update it.
+            boolean isSelected = currentItem.z();  // Real DEX: z()Z returns s
+            boolean newState = !isSelected;
+
+            // Update both fields to keep everything in sync:
+            currentItem.X(newState);   // Sets s = newState (also sets B0 if selecting)
+            currentItem.c0(newState ? 1 : 0);  // Sets L = 1 or 0 (keeps U() in sync)
 
             // Sync FilmStrip thumbnail selection state
-            syncFilmStripSelection(vian, currentItem, !isSelected);
+            syncFilmStripSelection(vian, currentItem, newState);
         } catch (Throwable ignored) {}
     }
 
     /**
      * Check if the currently displayed media item is selected.
+     *
+     * Uses z() which returns field 's' (the authoritative boolean selected flag).
+     * Previous version used U() which checks field 'L' (int) — but X() only
+     * updates 's', not 'L', causing U() to return stale values after toggling.
      */
     private static boolean isCurrentItemSelected(Activity activity) {
         try {
@@ -201,7 +234,7 @@ public class QuickSelectHelper {
                 ViewImageActivityNew vian = (ViewImageActivityNew) activity;
                 t currentItem = vian.u0 != null ? vian.u0.o() : null;
                 if (currentItem != null) {
-                    return currentItem.U();  // Real DEX: U()Z
+                    return currentItem.z();  // Real DEX: z()Z returns field s
                 }
             }
         } catch (Throwable ignored) {}
@@ -212,11 +245,16 @@ public class QuickSelectHelper {
      * Sync the FilmStrip thumbnail selection state with c3.t state.
      *
      * FilmStrip draws checkmarks based on p1.m (boolean selected),
-     * while the app logic uses c3.t.U()/X() (which checks/sets c3.t.L/s).
-     * We need to keep both in sync for bidirectional selection.
+     * while the app logic uses c3.t.z()/X() (which checks/sets c3.t.s)
+     * and c3.t.U() (which checks c3.t.L).
      *
-     * After updating p1.m, we enable FilmStrip.D (selection mode) and
-     * call invalidate() to trigger a redraw showing the checkmark.
+     * After updating both s and L fields, we also need to:
+     * 1. Enable FilmStrip selection mode (D = true)
+     * 2. Update p1.m on the matching thumbnail
+     * 3. Trigger FilmStrip redraw to show/hide the checkmark
+     *
+     * We use FilmStrip.e(String) to find the matching p1 thumbnail
+     * by file path, comparing c3.t.j (file path) with p1.h (file path).
      */
     private static void syncFilmStripSelection(ViewImageActivityNew vian, t item, boolean selected) {
         try {
@@ -226,21 +264,15 @@ public class QuickSelectHelper {
             // Enable selection mode in FilmStrip so checkmarks are drawn
             filmStrip.D = true;
 
-            // Find the matching p1 thumbnail in FilmStrip.l and update its m field
-            java.util.ArrayList thumbnails = filmStrip.l;
-            if (thumbnails == null) return;
-
+            // Use FilmStrip.e(String) to find the matching p1 thumbnail
+            // This method compares p1.h with the given path string
             String itemPath = item.j;  // c3.t.j = file path (public String)
 
-            for (int i = 0; i < thumbnails.size(); i++) {
-                Object thumbObj = thumbnails.get(i);
+            if (itemPath != null) {
+                Object thumbObj = filmStrip.e(itemPath);  // FilmStrip.e(String)p1
                 if (thumbObj instanceof com.fstop.photo.p1) {
                     com.fstop.photo.p1 thumb = (com.fstop.photo.p1) thumbObj;
-                    // p1.h = file path string, compare with c3.t.j
-                    if (itemPath != null && itemPath.equals(thumb.h)) {
-                        thumb.m = selected;  // p1.m = boolean selected state
-                        break;
-                    }
+                    thumb.m = selected;  // p1.m = boolean selected state for drawing
                 }
             }
 
@@ -265,7 +297,7 @@ public class QuickSelectHelper {
         Canvas canvas = new Canvas(bitmap);
         Paint paint = new Paint();
         paint.setAntiAlias(true);
-        paint.setColor(Color.parseColor("#0DFFFFFF")); // Very subtle white
+        paint.setColor(Color.parseColor("#0DFFFFFF"));
         paint.setStyle(Paint.Style.FILL);
         canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint);
         return new BitmapDrawable(context.getResources(), bitmap);
@@ -273,7 +305,7 @@ public class QuickSelectHelper {
 
     /**
      * Create a select/deselect icon as a BitmapDrawable.
-     * - Unselected: outline circle (gray)
+     * - Unselected: outline circle (gray) with dot
      * - Selected: filled circle with checkmark (green)
      */
     private static Drawable createSelectIcon(Context context, boolean isSelected) {

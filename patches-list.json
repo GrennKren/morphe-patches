@@ -4722,7 +4722,7 @@
     },
     {
       "name": "License compatibility",
-      "description": "Fixes premium detection for users who have purchased the F-Stop key app. The patched APK has a different signing certificate, causing the original checkSignatures() verification to fail. This patch adds an alternative check using getPackageInfo() so that legitimate license holders are correctly detected as premium without needing the 'Unlock premium' bypass patch.",
+      "description": "Fixes premium detection for patched F-Stop APKs. The original checkSignatures() verification always fails for patched APKs because they are re-signed with a different certificate. This patch replaces the checkSignatures() call with a match result, allowing premium features to work without needing the 'Unlock premium' bypass patch. The IAP-based checks (b0.z and purchase set) are preserved.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
@@ -7593,7 +7593,7 @@
     },
     {
       "name": "Unlock premium",
-      "description": "Bypasses all license checks, making s3.a.d() and s3.a.e() always return true. For users who have NOT purchased the premium key app. If you have purchased the key app, the 'License compatibility' patch (enabled by default) should be sufficient. Disabled by default.",
+      "description": "Bypasses all license checks, making s3.a.d() and s3.a.e() always return true. For users who want to unconditionally unlock all premium features. The 'License compatibility' patch (enabled by default) should be sufficient for most users. Disabled by default.",
       "default": false,
       "dependencies": [],
       "compatiblePackages": [

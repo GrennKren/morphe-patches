@@ -16,35 +16,36 @@ import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
  * ARCHITECTURE:
  * There are two patches for premium features:
  *
- * 1. "License compatibility" (always enabled): Fixes premium detection for
- *    users who have purchased the key app (com.fstop.photo.key). It injects
- *    a getPackageInfo() check at the start of s3.a.d() so the key app's
- *    presence is detected even though checkSignatures() fails for patched APKs.
- *    This is NOT a bypass — it only helps if the key app is legitimately
- *    installed.
+ * 1. "License compatibility" (always enabled): Fixes the checkSignatures()
+ *    call in s3.a.d() that always fails for patched APKs. It replaces the
+ *    checkSignatures() result with SIGNATURE_MATCH (0), so the first OR
+ *    condition in d() is always true. The IAP checks (b0.z and a.size())
+ *    are preserved as fallback conditions. This is a compatibility fix,
+ *    not a bypass.
  *
  * 2. "Unlock premium" (this patch, disabled by default): Bypasses ALL license
  *    checks by making s3.a.d() and s3.a.e() always return true. This is for
- *    users who have NOT purchased the premium key app and want to unlock
- *    premium features without a valid license.
+ *    users who want to unlock all premium features unconditionally.
  *
- * For legitimate license holders, the "License compatibility" patch alone
- * is sufficient. This "Unlock premium" patch should only be enabled by users
- * who do not have a valid premium license.
+ * For most users, the "License compatibility" patch alone is sufficient.
+ * This "Unlock premium" patch should only be enabled by users who want
+ * to bypass all premium restrictions.
  *
- * NOTE: The methods p.N2() and p.x2() that check for the key app package
- * and component enabled state are NOT premium feature gates — they only
- * control the "Show/Hide Key App Icon" preference in settings. The actual
- * premium feature gating is done exclusively through s3.a.d(), which is
- * called 54 times across the codebase.
+ * NOTE: F-Stop uses Google Play In-App Purchasing (IAP) for premium —
+ * there is no separate key app. The checkSignatures() call in d() is a
+ * legacy check that always fails for patched APKs regardless of purchase
+ * status. The methods p.N2() and p.x2() are NOT premium feature gates —
+ * they only control the "Show/Hide Key App Icon" preference in settings.
+ * The actual premium feature gating is done exclusively through s3.a.d(),
+ * which is called 54 times across the codebase.
  */
 @Suppress("unused")
 val unlockPremiumPatch = bytecodePatch(
     name = "Unlock premium",
     description = "Bypasses all license checks, making s3.a.d() and s3.a.e() " +
-        "always return true. For users who have NOT purchased the premium " +
-        "key app. If you have purchased the key app, the 'License compatibility' " +
-        "patch (enabled by default) should be sufficient. Disabled by default.",
+        "always return true. For users who want to unconditionally unlock " +
+        "all premium features. The 'License compatibility' patch (enabled by " +
+        "default) should be sufficient for most users. Disabled by default.",
     default = false,
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
