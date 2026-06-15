@@ -11,7 +11,7 @@ import com.android.tools.smali.dexlib2.AccessFlags
  * - Class: Lcom/fstop/photo/contentProvider/FileProvider;
  * - The <clinit> method contains:
  *   1. Uri.parse("content://com.fstop.photo.contentProvider.FileProvider")
- *      stored in static field f8849g
+ *      stored in static field g
  *   2. UriMatcher construction with addURI("com.fstop.photo.contentProvider.FileProvider", ...)
  *
  * The patch needs to update the hardcoded authority string so it matches
@@ -32,7 +32,7 @@ internal object FileProviderInitFingerprint : Fingerprint(
  * - Class: Lcom/fstop/photo/contentProvider/SearchSuggestionsProvider;
  * - The <clinit> method contains:
  *   1. Uri.parse("content://com.fstop.photo.searchSuggestionsProvider/search")
- *      stored in static field f8851g
+ *      stored in static field g
  *   2. UriMatcher construction with addURI("com.fstop.photo.searchSuggestionsProvider", ...)
  *
  * The patch needs to update the hardcoded authority string so it matches
@@ -68,4 +68,23 @@ internal object HardcodedPackageNameFingerprint : Fingerprint(
             name = "getPackageInfo",
         ),
     ),
+)
+
+/**
+ * Fingerprint for the native library loader method that contains
+ * hardcoded JNI paths.
+ *
+ * From APK decompilation:
+ * - Class: Lcom/fstop/Native/NativeMethods;
+ * - Method: <clinit>
+ * - Contains const-string instructions with:
+ *   /data/app-lib/com.fstop.photo/libfunctions-jni.so
+ *   /data/data/com.fstop.photo/lib/libfunctions-jni.so
+ * - The Editor feature uses libfunctions-jni.so for image editing.
+ *
+ * After package name change, these paths point to the wrong directory.
+ * Without updating them, the Editor shows "path not found" error.
+ */
+internal object JniPathFingerprint : Fingerprint(
+    strings = listOf("libfunctions-jni.so"),
 )

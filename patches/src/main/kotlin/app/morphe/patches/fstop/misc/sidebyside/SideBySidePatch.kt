@@ -23,38 +23,40 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
  * name in AndroidManifest.xml is NOT enough because F-Stop has hardcoded authority
  * strings in its bytecode:
  *
- * 1. FileProvider uses "com.fstop.photo.contentProvider.FileProvider" as a hardcoded
- *    authority in its <clinit> method (Uri.parse + UriMatcher.addURI).
+ * 1. FileProvider uses "content://com.fstop.photo.contentProvider.FileProvider" in
+ *    Uri.parse() and "com.fstop.photo.contentProvider.FileProvider" in addURI().
  * 2. SearchSuggestionsProvider uses "com.fstop.photo.searchSuggestionsProvider" as
  *    a hardcoded authority in its <clinit> method.
- * 3. Various methods use getPackageName() to construct data paths
- *    (/Android/data/{packageName}/...), which is actually fine because the data
- *    directory should match the new package name.
- * 4. p.L() hardcodes "com.fstop.photo" in a getPackageInfo() call to get
- *    firstInstallTime — this needs updating so the app can find itself.
- *
- * When the manifest's provider authorities are changed but the bytecode still
- * uses the old authority strings, the ContentProviders fail to resolve URIs,
- * causing the app to crash on startup.
+ * 3. p.L() hardcodes "com.fstop.photo" in a getPackageInfo() call.
+ * 4. NativeMethods.<clinit> has hardcoded JNI paths:
+ *    /data/app-lib/com.fstop.photo/libfunctions-jni.so
+ *    /data/data/com.fstop.photo/lib/libfunctions-jni.so
+ *    These paths must be updated for the Editor to work.
  *
  * SOLUTION:
  * This patch:
  * 1. Changes the package name in AndroidManifest.xml (via changePackageNamePatch)
  * 2. Updates all manifest authority references (inline resourcePatch)
- * 3. Updates hardcoded authority strings in FileProvider bytecode
- * 4. Updates hardcoded authority strings in SearchSuggestionsProvider bytecode
+ * 3. Updates hardcoded authority strings in FileProvider bytecode (preserving content:// prefix)
+ * 4. Updates hardcoded authority strings in SearchSuggestionsProvider bytecode (preserving content:// prefix)
  * 5. Updates hardcoded package name string in p.L() method
+ * 6. Updates hardcoded JNI paths in NativeMethods.<clinit> for the Editor feature
  *
- * The new package name defaults to "com.fstop.photo.morphe" but can be customized
- * via the Change package name patch options.
+ * CRITICAL FIX (v2): Uses substring replacement instead of hardcoded replacement
+ * to preserve the "content://" prefix in URI strings. The old approach replaced
+ * the ENTIRE const-string with just the authority, which broke FileProvider URIs:
+ *   "content://com.fstop.photo.contentProvider.FileProvider" became
+ *   "com.fstop.photo.morphe.contentProvider.FileProvider" (missing content://).
+ * This caused FileNotFoundException in the Editor.
  */
 @Suppress("unused")
 val sideBySidePatch = bytecodePatch(
     name = "Side-by-side installation",
     description = "Changes the package name to allow installing the patched app " +
         "alongside the original. Also updates hardcoded ContentProvider authority " +
-        "strings in bytecode to match the new package name. Without these bytecode " +
-        "fixes, the app would crash because providers cannot resolve URIs.",
+        "strings and JNI paths in bytecode to match the new package name. " +
+        "Without these bytecode fixes, the app would crash because providers " +
+        "cannot resolve URIs and the Editor would fail with 'path not found'.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
@@ -94,16 +96,18 @@ val sideBySidePatch = bytecodePatch(
         // Part 1: Update FileProvider hardcoded authorities
         // ============================================================
         // FileProvider.<clinit> contains:
-        //   const-string vX, "com.fstop.photo.contentProvider.FileProvider"
-        //   invoke-static {vX}, Landroid/net/Uri;->parse(...)
+        //   const-string v0, "content://com.fstop.photo.contentProvider.FileProvider"
+        //   invoke-static {v0}, Uri;->parse(...)
         //   ...
-        //   const-string vY, "com.fstop.photo.contentProvider.FileProvider"
-        //   invoke-virtual {vZ, vY, ...}, Landroid/content/UriMatcher;->addURI(...)
-        //   const-string vY, "com.fstop.photo.contentProvider.FileProvider"
-        //   invoke-virtual {vZ, vY, ...}, Landroid/content/UriMatcher;->addURI(...)
+        //   const-string v3, "com.fstop.photo.contentProvider.FileProvider"
+        //   invoke-virtual {v0, v3, ...}, UriMatcher;->addURI(...)
+        //   const-string v3, "com.fstop.photo.contentProvider.FileProvider"
+        //   invoke-virtual {v0, v3, ...}, UriMatcher;->addURI(...)
         //
-        // We need to replace ALL const-string instructions that contain the old
-        // authority with the new one.
+        // CRITICAL: Use substring replacement to preserve "content://" prefix.
+        // The first const-string has "content://" prefix for Uri.parse(),
+        // while the other two are bare authority strings for addURI().
+        // We replace "com.fstop.photo" with the new package name in all cases.
 
         FileProviderInitFingerprint.method.apply {
             val impl = implementation!!
@@ -113,11 +117,12 @@ val sideBySidePatch = bytecodePatch(
                     instruction is ReferenceInstruction &&
                     instruction.reference.toString().contains("com.fstop.photo.contentProvider.FileProvider")
                 ) {
-                    val newAuthority = "com.fstop.photo.morphe.contentProvider.FileProvider"
+                    val oldString = instruction.reference.toString()
+                    val newString = oldString.replace("com.fstop.photo", toPackage)
                     val register = (instruction as com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction).registerA
                     replaceInstruction(
                         index,
-                        "const-string v$register, \"$newAuthority\"",
+                        "const-string v$register, \"$newString\"",
                     )
                 }
             }
@@ -126,8 +131,8 @@ val sideBySidePatch = bytecodePatch(
         // ============================================================
         // Part 2: Update SearchSuggestionsProvider hardcoded authorities
         // ============================================================
-        // Same pattern as FileProvider — replace all const-string instructions
-        // containing the old authority.
+        // Same pattern as FileProvider — use substring replacement to
+        // preserve any URI scheme prefix.
 
         SearchSuggestionsProviderInitFingerprint.method.apply {
             val impl = implementation!!
@@ -137,11 +142,12 @@ val sideBySidePatch = bytecodePatch(
                     instruction is ReferenceInstruction &&
                     instruction.reference.toString().contains("com.fstop.photo.searchSuggestionsProvider")
                 ) {
-                    val newAuthority = "com.fstop.photo.morphe.searchSuggestionsProvider"
+                    val oldString = instruction.reference.toString()
+                    val newString = oldString.replace("com.fstop.photo", toPackage)
                     val register = (instruction as com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction).registerA
                     replaceInstruction(
                         index,
-                        "const-string v$register, \"$newAuthority\"",
+                        "const-string v$register, \"$newString\"",
                     )
                 }
             }
@@ -152,7 +158,7 @@ val sideBySidePatch = bytecodePatch(
         // ============================================================
         // p.L() contains:
         //   const-string vX, "com.fstop.photo"
-        //   invoke-virtual {vY, vX, ...}, Landroid/content/pm/PackageManager;->getPackageInfo(...)
+        //   invoke-virtual {vY, vX, ...}, PackageManager;->getPackageInfo(...)
         //
         // After package name change, getPackageInfo("com.fstop.photo") would
         // fail to find the app (since it's now com.fstop.photo.morphe).
@@ -170,6 +176,40 @@ val sideBySidePatch = bytecodePatch(
                     replaceInstruction(
                         index,
                         "const-string v$register, \"$toPackage\"",
+                    )
+                }
+            }
+        }
+
+        // ============================================================
+        // Part 4: Update hardcoded JNI paths in NativeMethods.<clinit>
+        // ============================================================
+        // NativeMethods.<clinit> contains fallback JNI loading paths:
+        //   const-string v0, "/data/app-lib/com.fstop.photo/libfunctions-jni.so"
+        //   System.load(v0)
+        //   const-string v0, "/data/data/com.fstop.photo/lib/libfunctions-jni.so"
+        //   System.load(v0)
+        //
+        // The Editor feature uses libfunctions-jni.so for image editing.
+        // After package name change, these paths point to the wrong directory,
+        // causing "path not found" error when opening the Editor.
+        //
+        // We replace the package name in these paths to match the new package.
+
+        JniPathFingerprint.method.apply {
+            val impl = implementation!!
+
+            for ((index, instruction) in impl.instructions.withIndex()) {
+                if (instruction.opcode == Opcode.CONST_STRING &&
+                    instruction is ReferenceInstruction &&
+                    instruction.reference.toString().contains("com.fstop.photo")
+                ) {
+                    val oldString = instruction.reference.toString()
+                    val newString = oldString.replace("com.fstop.photo", toPackage)
+                    val register = (instruction as com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction).registerA
+                    replaceInstruction(
+                        index,
+                        "const-string v$register, \"$newString\"",
                     )
                 }
             }

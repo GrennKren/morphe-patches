@@ -4722,7 +4722,7 @@
     },
     {
       "name": "License compatibility",
-      "description": "Fixes premium detection for patched F-Stop APKs. The original checkSignatures() verification always fails for patched APKs because they are re-signed with a different certificate. This patch replaces the checkSignatures() call with a match result, allowing premium features to work without needing the 'Unlock premium' bypass patch. The IAP-based checks (b0.z and purchase set) are preserved.",
+      "description": "Fixes premium detection for patched F-Stop APKs by checking if the original F-Stop app is installed. The patched APK cannot verify its own signature (re-signed), and Google Play billing data is not accessible with a changed package name. This patch replaces checkSignatures(mainApp, keyApp) with checkSignatures(mainApp, mainApp), which succeeds only when the original app is installed. NOT a bypass — does NOT unlock premium for users without the original app.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
@@ -5762,6 +5762,33 @@
               "version": "7.29.52",
               "isExperimental": false,
               "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Persist folder thumbnails",
+      "description": "Fixes thumbnail disappearance when F-Stop has 3000+ folders. 1) Forces 'prescanThumbnails' preference to always ON (enables SQLite persistence). 2) Neutralizes y1.b() cache clearing. 3) Increases LRU cache size from 50 to 500 entries. Thumbnails are persisted to SQLite by the existing prescan pipeline and survive app restarts.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
               "description": null
             }
           ]
@@ -6824,7 +6851,7 @@
     },
     {
       "name": "Side-by-side installation",
-      "description": "Changes the package name to allow installing the patched app alongside the original. Also updates hardcoded ContentProvider authority strings in bytecode to match the new package name. Without these bytecode fixes, the app would crash because providers cannot resolve URIs.",
+      "description": "Changes the package name to allow installing the patched app alongside the original. Also updates hardcoded ContentProvider authority strings and JNI paths in bytecode to match the new package name. Without these bytecode fixes, the app would crash because providers cannot resolve URIs and the Editor would fail with 'path not found'.",
       "default": true,
       "dependencies": [
         "ResourcePatch",
