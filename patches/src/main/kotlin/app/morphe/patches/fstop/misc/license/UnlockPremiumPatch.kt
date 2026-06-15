@@ -13,23 +13,14 @@ import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 /**
  * Patch to bypass F-Stop premium verification entirely.
  *
- * ARCHITECTURE:
- * There are two patches for premium features:
+ * Bypasses ALL license checks by making s3.a.d() and s3.a.e() always return
+ * true. This unconditionally unlocks all premium features for the patched APK.
  *
- * 1. "License compatibility" (always enabled): Fixes the checkSignatures()
- *    call in s3.a.d() that always fails for patched APKs. It replaces the
- *    checkSignatures() result with SIGNATURE_MATCH (0), so the first OR
- *    condition in d() is always true. The IAP checks (b0.z and a.size())
- *    are preserved as fallback conditions. This is a compatibility fix,
- *    not a bypass.
+ * The patch replaces the method bodies of:
+ *   - s3.a.d() — the main premium check (signature + IAP + purchase set)
+ *   - s3.a.e() — the billing flow check (IAP + purchase set, no signature)
  *
- * 2. "Unlock premium" (this patch, disabled by default): Bypasses ALL license
- *    checks by making s3.a.d() and s3.a.e() always return true. This is for
- *    users who want to unlock all premium features unconditionally.
- *
- * For most users, the "License compatibility" patch alone is sufficient.
- * This "Unlock premium" patch should only be enabled by users who want
- * to bypass all premium restrictions.
+ * Both are replaced with: const/4 v0, 0x1; return v0 (always return true).
  *
  * NOTE: F-Stop uses Google Play In-App Purchasing (IAP) for premium —
  * there is no separate key app. The checkSignatures() call in d() is a
@@ -43,10 +34,9 @@ import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 val unlockPremiumPatch = bytecodePatch(
     name = "Unlock premium",
     description = "Bypasses all license checks, making s3.a.d() and s3.a.e() " +
-        "always return true. For users who want to unconditionally unlock " +
-        "all premium features. The 'License compatibility' patch (enabled by " +
-        "default) should be sufficient for most users. Disabled by default.",
-    default = false,
+        "always return true. Unconditionally unlocks all premium features. " +
+        "Enabled by default.",
+    default = true,
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 

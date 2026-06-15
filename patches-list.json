@@ -2997,6 +2997,33 @@
       "options": []
     },
     {
+      "name": "Generate cover thumbnails",
+      "description": "Adds a 'Generate cover thumbnails' option in Settings → Cache that generates thumbnails for the cover image of each included folder. Shows progress via a notification with live updates.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "GmsCore support",
       "description": "Allows the app to work without root by using a different package name when patched using a GmsCore instead of Google Play Services.",
       "default": true,
@@ -4713,33 +4740,6 @@
               "version": "20.21.37",
               "isExperimental": false,
               "minSdk": 26,
-              "description": null
-            }
-          ]
-        }
-      ],
-      "options": []
-    },
-    {
-      "name": "License compatibility",
-      "description": "Fixes premium detection for patched F-Stop APKs by checking if the original F-Stop app is installed. The patched APK cannot verify its own signature (re-signed), and Google Play billing data is not accessible with a changed package name. This patch replaces checkSignatures(mainApp, keyApp) with checkSignatures(mainApp, mainApp), which succeeds only when the original app is installed. NOT a bypass — does NOT unlock premium for users without the original app.",
-      "default": true,
-      "dependencies": [],
-      "compatiblePackages": [
-        {
-          "packageName": "com.fstop.photo",
-          "name": "F-Stop",
-          "description": null,
-          "apkFileType": "APK_REQUIRED",
-          "appIconColor": "#2196F3",
-          "signatures": [
-            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
-          ],
-          "targets": [
-            {
-              "version": "5.5.484",
-              "isExperimental": false,
-              "minSdk": 24,
               "description": null
             }
           ]
@@ -7620,8 +7620,8 @@
     },
     {
       "name": "Unlock premium",
-      "description": "Bypasses all license checks, making s3.a.d() and s3.a.e() always return true. For users who want to unconditionally unlock all premium features. The 'License compatibility' patch (enabled by default) should be sufficient for most users. Disabled by default.",
-      "default": false,
+      "description": "Bypasses all license checks, making s3.a.d() and s3.a.e() always return true. Unconditionally unlocks all premium features. Enabled by default.",
+      "default": true,
       "dependencies": [],
       "compatiblePackages": [
         {
