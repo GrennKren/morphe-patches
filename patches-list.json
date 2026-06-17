@@ -2997,33 +2997,6 @@
       "options": []
     },
     {
-      "name": "Generate cover thumbnails",
-      "description": "Adds a 'Generate cover thumbnails' option in Settings → Cache that generates thumbnails for the cover image of each included folder. Shows progress via a notification with live updates.",
-      "default": true,
-      "dependencies": [],
-      "compatiblePackages": [
-        {
-          "packageName": "com.fstop.photo",
-          "name": "F-Stop",
-          "description": null,
-          "apkFileType": "APK_REQUIRED",
-          "appIconColor": "#2196F3",
-          "signatures": [
-            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
-          ],
-          "targets": [
-            {
-              "version": "5.5.484",
-              "isExperimental": false,
-              "minSdk": 24,
-              "description": null
-            }
-          ]
-        }
-      ],
-      "options": []
-    },
-    {
       "name": "GmsCore support",
       "description": "Allows the app to work without root by using a different package name when patched using a GmsCore instead of Google Play Services.",
       "default": true,
