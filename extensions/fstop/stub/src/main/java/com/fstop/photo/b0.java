@@ -8,8 +8,17 @@
  *   Used by x2() for menu item visibility (crop visible when H4 > 0, etc.).
  * - V4: static int — selection session ID counter. Incremented by x().
  *   Used by c3/t.X(true) which assigns the next session ID to B0.
+ * - p: static e3.b — the singleton DB helper instance. Initialized during
+ *   app startup. Used to access the SQLite Thumbnail table (read/write
+ *   MicroThumbnail blobs). Referenced by y1, p, e0, etc. via
+ *   `sget-object v0, Lcom/fstop/photo/b0;->p:Le3/b;`.
+ * - X2: static boolean — prescanThumbnails preference. When true, the
+ *   prescan pipeline saves thumbnails to SQLite. Loaded from
+ *   SharedPreferences key "prescanThumbnails" in p.R2().
  */
 package com.fstop.photo;
+
+import e3.b;
 
 @SuppressWarnings("unused")
 public class b0 {
@@ -27,6 +36,20 @@ public class b0 {
      * Each new selection gets a unique session ID stored in c3/t.B0.
      */
     public static int V4;  // selection ID counter (real DEX name)
+
+    /**
+     * The database helper instance (e3.b).
+     * Initialized during app startup. Used to access the SQLite
+     * Thumbnail table — read via a0(), write via Y1().
+     */
+    public static b p;
+
+    /**
+     * prescanThumbnails preference (forced true by the Persist folder
+     * thumbnails patch). When true, the prescan pipeline saves
+     * thumbnails to SQLite.
+     */
+    public static boolean X2;
 
     /**
      * Generate a new selection session ID.

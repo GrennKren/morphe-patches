@@ -5744,7 +5744,7 @@
     },
     {
       "name": "Persist folder thumbnails",
-      "description": "Fixes thumbnail disappearance when F-Stop has 3000+ folders. 1) Forces 'prescanThumbnails' preference to always ON (enables SQLite persistence). 2) Neutralizes y1.b() cache clearing. 3) Increases LRU cache size from 50 to 500 entries. Thumbnails are persisted to SQLite by the existing prescan pipeline and survive app restarts.",
+      "description": "Fixes thumbnail disappearance when F-Stop has 3000+ folders. 1) NOPs the 8 automatic y1.b() call sites (OOM catch blocks + system memory callbacks) so the in-memory cache is never auto-cleared. 2) Increases LRU cache size from 50 to 500 entries. 3) THE KEY FIX: saves every on-demand-loaded thumbnail to SQLite via y1.h() → e3/b.Y1(). The SQLite cache grows as the user browses (not from prescan), so thumbnails for visited folders survive force-stop. Does NOT force 'prescanThumbnails' ON — preserves vanilla behavior (no 'Scanning media' notification, no app data bloat). y1.b() itself is left intact so the Settings -> Main -> Cache -> 'Refresh thumbnail cache' button still works as intended.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
@@ -7528,6 +7528,33 @@
           }
         }
       ]
+    },
+    {
+      "name": "Thumbnail cache logger",
+      "description": "Injects log statements into F-Stop's thumbnail pipeline (tagged \"MorpheFstop\") so you can diagnose thumbnail-load latency, cache-hit rates, and cache-clear events via logcat. Logs APP_ONCREATE (app startup), VIEWPOINT_ENTER (MainActivity onResume), BITMAP_LOADED (y1.h store), BITMAP_CACHE_HIT (y1.f cache hit), CACHE_CLEARED (y1.b), SQLITE_READ (e3/b.a0 SQLite thumbnail read attempt), and SQLITE_WRITE (e3/b.Y1 prescan save to SQLite). The SQLITE_READ/WRITE events let you diagnose why thumbnails don't survive a force-stop: if you see SQLITE_WRITE events, prescan IS running; if SQLITE_READ events on restart are followed by slow BITMAP_LOADED events, the SQLite cache is incomplete (prescan was interrupted). Safe to combine with the Persist folder thumbnails patch — this patch only adds logging, it does not change caching behavior.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
     },
     {
       "name": "Track crossfade",
