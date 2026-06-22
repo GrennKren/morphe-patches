@@ -7619,6 +7619,33 @@
       "options": []
     },
     {
+      "name": "True lazy load folder thumbnails",
+      "description": "Makes F-Stop's folder cover thumbnail loading truly viewport-prioritized. Stock behavior: the 'ThumbnailDataSetter' queue (Lcom/fstop/photo/x1;) processes folder cover path lookups in FIFO order, so when you open the app and scroll down fast, top folders get their cover paths resolved first and bottom folders have to wait. Combined with the downstream 'ThumbnailReader' queue (Lcom/fstop/photo/z1;) which is already LIFO, this means bottom thumbnails cannot be loaded until x1 catches up — making scroll-to-bottom feel very slow. This patch changes x1.a(Lc3/e;)V to insert at HEAD (LIFO) instead of END (FIFO), matching z1's behavior. After this patch, both queues are LIFO: the most recently scrolled-to viewport items get their cover paths resolved first AND their bitmaps loaded first. Works alongside the 'Create thumbnails in advance' setting (prescanThumbnails) — if prescan is OFF (lazy load), this patch makes the lazy load actually viewport-aware. If prescan is ON, this patch has no effect (because prescan pre-generates thumbnails in advance and x1 is not on the hot path).",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Unlock premium",
       "description": "Bypasses all license checks, making s3.a.d() and s3.a.e() always return true. Unconditionally unlocks all premium features. Enabled by default.",
       "default": true,
