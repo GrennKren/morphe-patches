@@ -357,3 +357,41 @@ internal object DatabaseUpdaterServiceCRunFingerprint : Fingerprint(
         ),
     ),
 )
+
+/**
+ * Fingerprint for `Lcom/fstop/photo/Services/DatabaseUpdaterService;->j()Z`.
+ *
+ * From APK decompilation:
+ * - Method: PUBLIC, no parameters, returns boolean
+ * - Body: `return b0.f8604a4 != 0 || b0.X2;`
+ *   where f8604a4 = max unprocessed image count, X2 = prescanThumbnails pref
+ * - Used by the prescan worker (DatabaseUpdaterService$c.run()) to decide
+ *   whether to show the "Scanning media" foreground notification
+ *
+ * The patch replaces the method body to return ONLY `b0.X2`, so the
+ * notification only appears when the user has explicitly enabled
+ * "Create thumbnails in advance". When that setting is OFF, no
+ * "Scanning media" notification is shown, even if there are images
+ * with MetadataProcessed=0 (metadata processing still runs in the
+ * background, just without the foreground notification).
+ *
+ * This is safe because:
+ * - The prescan worker still runs and processes metadata regardless of j()
+ * - j() ONLY controls the foreground notification, not the prescan itself
+ * - When b0.X2=true (user enabled "Create thumbnails in advance"), j()
+ *   returns true and the notification shows as in vanilla F-Stop
+ * - When b0.X2=false, the prescan runs as a background service (no
+ *   notification), which is fine because metadata processing is fast
+ */
+internal object DatabaseUpdaterServiceShouldShowNotificationFingerprint : Fingerprint(
+    definingClass = "Lcom/fstop/photo/Services/DatabaseUpdaterService;",
+    returnType = "Z",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf(),
+    // The method body reads b0.a4 (sget int) and b0.X2 (sget-boolean),
+    // then returns (a4 != 0 || X2). No unique method calls to filter on,
+    // but the combination of class + return type + public + no params
+    // is sufficient to uniquely identify j() within DatabaseUpdaterService.
+    // Verified: no other public boolean no-arg methods in this class
+    // that have the same sget/sget-boolean pattern.
+)
