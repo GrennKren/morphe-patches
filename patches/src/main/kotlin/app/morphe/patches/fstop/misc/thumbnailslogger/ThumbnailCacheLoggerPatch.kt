@@ -273,5 +273,46 @@ val thumbnailCacheLoggerPatch = bytecodePatch(
                 invoke-static {p1, p2}, $LOGGER_CLASS->onSQLiteWrite(ILjava/lang/String;)V
             """.trimIndent())
         }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Hook 8: ListOfSomethingActivity.O6(c3/e, b0$g) — log FOLDER_OPENED
+        // ═══════════════════════════════════════════════════════════════
+        // O6() is called when the user taps a folder to open it.
+        // p1 = c3/e folder data, p1.m = folder path (PUBLIC field).
+        // O6() has .locals 2. We use v0 temporarily, original const/4
+        // overwrites it. Safe.
+        ListOfSomethingActivityO6Fingerprint.method.apply {
+            val impl = implementation!!
+            addInstructions(0, """
+                iget-object v0, p1, Lc3/e;->m:Ljava/lang/String;
+                invoke-static {v0}, $LOGGER_CLASS->onFolderOpened(Ljava/lang/String;)V
+            """.trimIndent())
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Hook 9: c.b(c3/e) — log COVER_RESOLVED (cache hit/miss)
+        // ═══════════════════════════════════════════════════════════════
+        // c.b() resolves cover for a folder. Checks c.a.containsKey(e.m).
+        // We inject code at index 0 that does its own containsKey() check
+        // and logs the result BEFORE the original method runs.
+        //
+        // IMPORTANT: This injected smali runs IN the context of class c
+        // (package com.fstop.photo), so it CAN access c.a (package-private).
+        // This is smali injection into the APK class, not a Java extension
+        // class — no IllegalAccessError.
+        //
+        // c.b() has .locals 5 (v0-v4). Our injection uses v0 and v1.
+        // The original first instruction (instance-of v0, p1, Lc3/i;)
+        // overwrites v0 after our code. Safe.
+        CoverResolverBFingerprint.method.apply {
+            val impl = implementation!!
+            addInstructions(0, """
+                iget-object v0, p0, Lcom/fstop/photo/c;->a:Ljava/util/HashMap;
+                iget-object v1, p1, Lc3/e;->m:Ljava/lang/String;
+                invoke-virtual {v0, v1}, Ljava/util/HashMap;->containsKey(Ljava/lang/Object;)Z
+                move-result v0
+                invoke-static {v1, v0}, $LOGGER_CLASS->onCoverResolved(Ljava/lang/String;Z)V
+            """.trimIndent())
+        }
     }
 }

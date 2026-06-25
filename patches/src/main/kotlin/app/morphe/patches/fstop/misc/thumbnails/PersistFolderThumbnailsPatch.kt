@@ -370,5 +370,28 @@ val persistFolderThumbnailsPatch = bytecodePatch(
             // The return instruction already returns v0, which now holds b0.X2.
             // No change needed for the return instruction.
         }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Part 6: Preload folder cover metadata on app startup
+        // ═══════════════════════════════════════════════════════════════
+        // On restart, c.a HashMap is empty → c.b() falls through to O0()
+        // per folder (SQLite query). We inject FolderCoverPreloader.preloadAsync()
+        // in MainActivity.onResume() to batch-preload c.a from a single
+        // FolderData JOIN Image SQL query. After preload, c.b() hits the
+        // in-memory HashMap instead of calling O0().
+        //
+        // FolderCoverPreloader uses REFLECTION to access c.a (package-private)
+        // and c$a.a (package-private) from the extension package.
+        // Direct field access causes IllegalAccessError at runtime.
+        //
+        // We reuse the existing MainActivityOnResumeFingerprint from
+        // the thumbnailslogger package.
+        val PRELOADER_CLASS = "Lapp/morphe/extension/fstop/FolderCoverPreloader;"
+        app.morphe.patches.fstop.misc.thumbnailslogger.MainActivityOnResumeFingerprint.method.apply {
+            val impl = implementation!!
+            addInstructions(1, """
+                invoke-static {}, $PRELOADER_CLASS->preloadAsync()V
+            """.trimIndent())
+        }
     }
 }

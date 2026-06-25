@@ -196,3 +196,50 @@ internal object E3BSQLiteWriteFingerprint : Fingerprint(
     accessFlags = listOf(AccessFlags.PUBLIC),
     parameters = listOf("I", "Ljava/lang/String;", "Landroid/graphics/Bitmap;"),
 )
+
+/**
+ * Fingerprint for `Lcom/fstop/photo/activity/ListOfSomethingActivity;->O6(Lc3/e;Lcom/fstop/photo/b0$g;)V`.
+ *
+ * Called when the user opens a folder. p1 = c3/e folder data, p1.m = folder path.
+ * The patch injects onFolderOpened(p1.m) at index 0.
+ */
+internal object ListOfSomethingActivityO6Fingerprint : Fingerprint(
+    definingClass = "Lcom/fstop/photo/activity/ListOfSomethingActivity;",
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf("Lc3/e;", "Lcom/fstop/photo/b0\$g;"),
+    filters = listOf(
+        methodCall(
+            definingClass = "Lcom/fstop/photo/activity/ListOfSomethingActivity;",
+            name = "P6",
+        ),
+    ),
+)
+
+/**
+ * Fingerprint for `Lcom/fstop/photo/c;->b(Lc3/e;)V`.
+ *
+ * Resolves cover for a folder: checks c.a.containsKey(e.m), then either
+ * copies cached data (hit) or calls e3.b.O0() (miss).
+ *
+ * The patch injects onCoverResolved(folderPath, cacheHit) at index 0.
+ * The injected code does its own containsKey() check and logs the result.
+ * c.b() has .locals 5 so v0-v1 are safe to use before the original code.
+ *
+ * IMPORTANT: The injected smali code runs in the context of class c
+ * (package com.fstop.photo), so it CAN access c.a (package-private).
+ * This is fine because the code is injected INTO the c class, not called
+ * from an external package.
+ */
+internal object CoverResolverBFingerprint : Fingerprint(
+    definingClass = "Lcom/fstop/photo/c;",
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf("Lc3/e;"),
+    filters = listOf(
+        methodCall(
+            definingClass = "Ljava/util/HashMap;",
+            name = "containsKey",
+        ),
+    ),
+)
