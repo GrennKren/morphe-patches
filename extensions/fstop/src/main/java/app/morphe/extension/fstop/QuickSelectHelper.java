@@ -6,6 +6,7 @@ package app.morphe.extension.fstop;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -17,7 +18,9 @@ import android.os.Looper;
 import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -33,7 +36,7 @@ import c3.t;
 /**
  * Helper class for the Quick Select patch in F-Stop's media viewer.
  *
- * ARCHITECTURE (v11 — fixed button toggle + bidirectional sync):
+ * ARCHITECTURE (v12 — floating draggable PiP-style button + persistent visibility toggle):
  *
  * SELECTION STATE MODEL (verified from DEX):
  * - c3/t.s (boolean): Per-item selected flag. Set by X(Z)V, read by z()Z.
@@ -45,7 +48,7 @@ import c3.t;
  * - FilmStrip.l (ArrayList<p1>): Thumbnails list, PARALLEL with u0.a (same index).
  * - p1.m (boolean): Per-thumbnail selected flag for FilmStrip checkmark drawing.
  *
- * BIDIRECTIONAL SYNC (v11):
+ * BIDIRECTIONAL SYNC:
  *
  * NATIVE FLOW (from FilmStrip$a.onLongPress, verified from DEX):
  *   1. f(x, y) → position (1-indexed)
@@ -72,6 +75,24 @@ import c3.t;
  *   Hook g(I Z)V — fires after X() is called, updates button icon.
  *   When user long-presses thumbnail, g() is called, our hook updates button.
  *
+ * FLOATING DRAGGABLE BUTTON (YouTube PiP-style):
+ *   - Button uses absolute X/Y coordinates (FrameLayout.LayoutParams with
+ *     Gravity.TOP|Gravity.START as base, then setX/setY for position).
+ *   - OnTouchListener distinguishes tap vs drag via touchSlop threshold:
+ *       * Movement < threshold → treated as tap → calls performClick()
+ *       * Movement >= threshold → treated as drag → updates X/Y in real-time
+ *   - Position is persisted to SharedPreferences so it survives app restarts.
+ *   - Position is clamped to screen bounds to prevent button going off-screen.
+ *
+ * PERSISTENT VISIBILITY:
+ *   - Default: button is VISIBLE in BOTH fullscreen and non-fullscreen modes.
+ *   - User can toggle visibility via the "Hide Quick Select" / "Show Quick Select"
+ *     menu item added to the 3-dot context menu (onCreateOptionsMenu).
+ *   - Visibility state is persisted to SharedPreferences.
+ *   - The auto-hide behavior that previously hid the button when entering
+ *     fullscreen mode (I2()) has been REMOVED. The button now stays visible
+ *     across fullscreen transitions unless the user explicitly hides it.
+ *
  * CRITICAL RULES:
  * - Do NOT call c0() — sets L (FAVORITES), causes blank images
  * - Do NOT set b0.H4 — shows crop icon on ALL images
@@ -79,12 +100,28 @@ import c3.t;
  * - Do NOT touch c3/t.g1 — controls image rendering
  * - Do NOT modify ALL p1.m values — causes blank images during page transitions
  * - Do NOT call vian.g() — it's a stub method (empty body)!
+ * - Do NOT hide button on I2()/a4() — visibility is user-controlled only
  */
 @SuppressWarnings("unused")
 public class QuickSelectHelper {
 
     private static final int BUTTON_ID = 0x7f09fffe;
+    private static final int TOGGLE_MENU_ITEM_ID = 0x7f09fffd;
     private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
+
+    // SharedPreferences keys — used to persist user's visibility preference and
+    // the floating button's last drag position across app restarts.
+    private static final String PREFS_NAME = "morphe_fstop_quickselect";
+    private static final String KEY_VISIBLE = "button_visible";
+    private static final String KEY_X = "button_x";
+    private static final String KEY_Y = "button_y";
+
+    // Default to VISIBLE — the user's expectation is that the button shows up
+    // until they explicitly toggle it off via the 3-dot menu.
+    private static boolean buttonVisible = true;
+    private static float savedX = -1f;
+    private static float savedY = -1f;
+    private static boolean prefsLoaded = false;
 
     // Menu item IDs to hide (verified from DEX):
     // 0x7F0A03D3 (2131362771) — controlled by BOTH t2() and x2(). We hide it.
@@ -102,12 +139,19 @@ public class QuickSelectHelper {
     /**
      * Add the quick select button to the media viewer layout.
      * Called from onCreateOptionsMenu hook (after menu inflation).
+     *
+     * The button is added as a floating, draggable view positioned via absolute
+     * X/Y coordinates (PiP-style). A "Hide/Show Quick Select" item is added to
+     * the supplied Menu so the user can toggle visibility from the 3-dot menu.
      */
     public static void addSelectButton(Activity activity, Menu menu) {
         try {
+            loadPrefsOnce(activity);
+
             View existing = activity.findViewById(BUTTON_ID);
             if (existing != null) {
                 updateButtonState(activity, existing);
+                addOrRefreshToggleMenuItem(activity, menu);
                 return;
             }
 
@@ -131,26 +175,33 @@ public class QuickSelectHelper {
             // Solid white background with dark border for visibility
             selectButton.setBackground(createButtonBackground(activity));
 
+            // Use absolute X/Y positioning (PiP-style). Gravity is START|TOP as
+            // a base; setX/setY then move the view to the desired location.
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(buttonSize, buttonSize);
-            params.gravity = Gravity.END | Gravity.TOP;
-            params.setMargins(0, marginTop, marginEnd, 0);
+            params.gravity = Gravity.TOP | Gravity.START;
+            params.setMargins(0, 0, 0, 0);
 
-            selectButton.setOnClickListener(v -> {
-                try {
-                    boolean wasSelected = isCurrentItemSelected(activity);
-                    toggleCurrentItemSelection(activity);
-                    // ALWAYS update icon — even if FilmStrip sync partially fails
-                    boolean nowSelected = isCurrentItemSelected(activity);
-                    ((ImageView) v).setImageDrawable(createSelectIcon(activity, nowSelected));
-                } catch (Throwable ignored) {}
-            });
+            // Calculate initial position: top-right by default, or restore the
+            // last drag position if the user has previously moved the button.
+            int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
+            int initialX = savedX >= 0 ? (int) savedX : (screenWidth - buttonSize - marginEnd);
+            int initialY = savedY >= 0 ? (int) savedY : marginTop;
+
+            selectButton.setX(initialX);
+            selectButton.setY(initialY);
+
+            // Set up combined drag + tap behavior on the button itself.
+            setupDragAndClick(selectButton, activity);
 
             contentView.addView(selectButton, params);
 
-            if (activity instanceof ViewImageActivityNew) {
-                ViewImageActivityNew vian = (ViewImageActivityNew) activity;
-                selectButton.setVisibility(vian.H0 ? View.VISIBLE : View.GONE);
-            }
+            // Apply visibility based on the user's persisted preference — NOT on
+            // the toolbar's H0 flag. The button stays visible across fullscreen
+            // transitions unless the user explicitly hides it.
+            selectButton.setVisibility(buttonVisible ? View.VISIBLE : View.GONE);
+
+            // Add the "Hide/Show Quick Select" entry to the 3-dot menu.
+            addOrRefreshToggleMenuItem(activity, menu);
 
             // Hide unwanted menu items AFTER the entire menu setup is done.
             // Use Handler.post to ensure this runs AFTER t2() and x2().
@@ -161,6 +212,8 @@ public class QuickSelectHelper {
     /**
      * Update the select button's icon — called from onPrepareOptionsMenu
      * and from M3() hook (via onPageChanged) for instant response on swipe.
+     * Also refreshes the toggle menu item's title so it matches the current
+     * visibility state.
      */
     public static void updateSelectButtonIcon(Activity activity, Menu menu) {
         try {
@@ -168,6 +221,8 @@ public class QuickSelectHelper {
             if (selectButton instanceof ImageView) {
                 updateButtonState(activity, selectButton);
             }
+            // Refresh the toggle menu item's title (Show/Hide Quick Select).
+            addOrRefreshToggleMenuItem(activity, menu);
             // Hide unwanted menu items after x2() has run
             hideUnwantedMenuItems(menu);
         } catch (Throwable ignored) {}
@@ -227,21 +282,251 @@ public class QuickSelectHelper {
         } catch (Throwable ignored) {}
     }
 
+    /**
+     * Called when the toolbar is shown (exiting fullscreen mode).
+     *
+     * In v12, this NO LONGER forces the button visible. The button's visibility
+     * is now controlled exclusively by the user's persisted preference
+     * ({@link #buttonVisible}). This method only ensures the button's visibility
+     * matches the user's preference in case something else changed it.
+     */
     public static void onToolbarShown(Activity activity) {
         try {
             View selectButton = activity.findViewById(BUTTON_ID);
             if (selectButton != null) {
-                selectButton.setVisibility(View.VISIBLE);
+                // Respect user's preference — do NOT override it.
+                selectButton.setVisibility(buttonVisible ? View.VISIBLE : View.GONE);
             }
         } catch (Throwable ignored) {}
     }
 
+    /**
+     * Called when the toolbar is hidden (entering fullscreen mode).
+     *
+     * In v12, this NO LONGER hides the button. Previously, entering fullscreen
+     * would hide the Quick Select button — which is the behavior the user
+     * explicitly wants removed. The button now stays visible across fullscreen
+     * transitions unless the user explicitly hides it via the 3-dot menu.
+     */
     public static void onToolbarHidden(Activity activity) {
         try {
             View selectButton = activity.findViewById(BUTTON_ID);
             if (selectButton != null) {
-                selectButton.setVisibility(View.GONE);
+                // Respect user's preference — do NOT hide on fullscreen entry.
+                selectButton.setVisibility(buttonVisible ? View.VISIBLE : View.GONE);
             }
+        } catch (Throwable ignored) {}
+    }
+
+    // ========================================================================
+    // VISIBILITY TOGGLE (user-controlled via 3-dot menu)
+    // ========================================================================
+
+    /**
+     * Toggle the floating button's visibility.
+     * Called when the user taps "Hide Quick Select" / "Show Quick Select" in
+     * the 3-dot context menu. The new state is persisted to SharedPreferences
+     * so it survives app restarts and is applied consistently across both
+     * fullscreen and non-fullscreen modes.
+     */
+    private static void toggleQuickSelectVisibility(Activity activity) {
+        buttonVisible = !buttonVisible;
+        saveVisibility(activity, buttonVisible);
+        try {
+            View button = activity.findViewById(BUTTON_ID);
+            if (button != null) {
+                button.setVisibility(buttonVisible ? View.VISIBLE : View.GONE);
+            }
+            // Note: the menu item's title is refreshed automatically the next
+            // time onPrepareOptionsMenu fires (via updateSelectButtonIcon).
+            // We don't call invalidateOptionsMenu() here because doing so can
+            // trigger menu refresh loops (per CRITICAL RULES).
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Add or refresh the "Hide/Show Quick Select" menu item.
+     *
+     * Called from both onCreateOptionsMenu (initial creation) and
+     * onPrepareOptionsMenu (every time the menu is shown). The first call
+     * creates the item and attaches an OnMenuItemClickListener; subsequent
+     * calls only update the title to reflect the current visibility state.
+     *
+     * The item is added with SHOW_AS_ACTION_NEVER so it appears in the
+     * 3-dot overflow menu alongside the other actions (Copy, Move, Edit tags,
+     * Rate, ..., Print, Copy to clipboard), not in the toolbar's action area.
+     */
+    private static void addOrRefreshToggleMenuItem(final Activity activity, Menu menu) {
+        if (menu == null) return;
+        try {
+            MenuItem item = menu.findItem(TOGGLE_MENU_ITEM_ID);
+            if (item == null) {
+                item = menu.add(Menu.NONE, TOGGLE_MENU_ITEM_ID, Menu.CATEGORY_SYSTEM,
+                    buttonVisible ? "Hide Quick Select" : "Show Quick Select");
+                item.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+                final Activity act = activity;
+                item.setOnMenuItemClickListener(mi -> {
+                    toggleQuickSelectVisibility(act);
+                    // Update the title immediately so the user sees the new label
+                    // the next time they open the 3-dot menu.
+                    mi.setTitle(buttonVisible ? "Hide Quick Select" : "Show Quick Select");
+                    return true;
+                });
+            } else {
+                // Refresh the title to match the current state.
+                item.setTitle(buttonVisible ? "Hide Quick Select" : "Show Quick Select");
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    // ========================================================================
+    // DRAG + CLICK HANDLING (YouTube PiP-style)
+    // ========================================================================
+
+    /**
+     * Attach an OnTouchListener that distinguishes between a tap and a drag.
+     *
+     * Behavior:
+     *   - ACTION_DOWN: record the touch start position and the button's
+     *     current X/Y. Mark as not-yet-dragging.
+     *   - ACTION_MOVE: if movement exceeds the touch-slop threshold, mark as
+     *     dragging. While dragging, update the button's X/Y in real-time and
+     *     clamp to screen bounds so the button can't be dragged off-screen.
+     *   - ACTION_UP: if a drag occurred, persist the new position to
+     *     SharedPreferences. If no drag occurred (movement was within the
+     *     threshold), treat the gesture as a tap and call performClick() to
+     *     toggle the current item's selection state.
+     *
+     * The threshold is the system's scaled touch-slop (typically ~8dp) but we
+     * enforce a minimum of 16 pixels to make tap-vs-drag detection more
+     * forgiving on high-density displays.
+     */
+    private static void setupDragAndClick(final ImageView button, final Activity activity) {
+        final float[] startTouchX = new float[1];
+        final float[] startTouchY = new float[1];
+        final float[] startButtonX = new float[1];
+        final float[] startButtonY = new float[1];
+        final boolean[] isDragging = new boolean[1];
+
+        float touchSlop;
+        try {
+            touchSlop = ViewConfiguration.get(activity).getScaledTouchSlop();
+        } catch (Throwable t) {
+            touchSlop = 16f;
+        }
+        // Enforce a minimum threshold of 16px so a small finger jitter on a
+        // high-DPI screen doesn't accidentally trigger a drag instead of a tap.
+        final float dragThreshold = Math.max(touchSlop, 16f);
+
+        button.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                try {
+                    switch (event.getActionMasked()) {
+                        case MotionEvent.ACTION_DOWN:
+                            startTouchX[0] = event.getRawX();
+                            startTouchY[0] = event.getRawY();
+                            startButtonX[0] = button.getX();
+                            startButtonY[0] = button.getY();
+                            isDragging[0] = false;
+                            return true;
+
+                        case MotionEvent.ACTION_MOVE: {
+                            float dx = event.getRawX() - startTouchX[0];
+                            float dy = event.getRawY() - startTouchY[0];
+                            if (!isDragging[0] &&
+                                (Math.abs(dx) > dragThreshold || Math.abs(dy) > dragThreshold)) {
+                                isDragging[0] = true;
+                            }
+                            if (isDragging[0]) {
+                                float newX = startButtonX[0] + dx;
+                                float newY = startButtonY[0] + dy;
+
+                                // Clamp to screen bounds so the button stays
+                                // at least partially visible at all times.
+                                int sw = activity.getResources().getDisplayMetrics().widthPixels;
+                                int sh = activity.getResources().getDisplayMetrics().heightPixels;
+                                int bs = button.getWidth();
+                                if (bs <= 0) {
+                                    bs = (int) (40 * activity.getResources().getDisplayMetrics().density);
+                                }
+                                newX = Math.max(0, Math.min(newX, sw - bs));
+                                newY = Math.max(0, Math.min(newY, sh - bs));
+
+                                button.setX(newX);
+                                button.setY(newY);
+                                return true;
+                            }
+                            return false;
+                        }
+
+                        case MotionEvent.ACTION_UP:
+                            if (isDragging[0]) {
+                                // Persist the new floating position.
+                                savePosition(activity, button.getX(), button.getY());
+                                isDragging[0] = false;
+                                return true;
+                            } else {
+                                // Treat as a tap — toggle the current item's
+                                // selection state. performClick() triggers the
+                                // OnClickListener attached below.
+                                button.performClick();
+                                return true;
+                            }
+
+                        case MotionEvent.ACTION_CANCEL:
+                            isDragging[0] = false;
+                            return true;
+                    }
+                } catch (Throwable ignored) {}
+                return false;
+            }
+        });
+
+        // The actual tap behavior (toggle selection) — invoked by
+        // performClick() from the touch listener when no drag occurred.
+        selectButtonSetOnClickListener(button, activity);
+    }
+
+    private static void selectButtonSetOnClickListener(final ImageView button, final Activity activity) {
+        button.setOnClickListener(v -> {
+            try {
+                toggleCurrentItemSelection(activity);
+                // ALWAYS update icon — even if FilmStrip sync partially fails
+                boolean nowSelected = isCurrentItemSelected(activity);
+                ((ImageView) v).setImageDrawable(createSelectIcon(activity, nowSelected));
+            } catch (Throwable ignored) {}
+        });
+    }
+
+    // ========================================================================
+    // PREFERENCES (persisted visibility + drag position)
+    // ========================================================================
+
+    private static void loadPrefsOnce(Context ctx) {
+        if (prefsLoaded) return;
+        try {
+            SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            buttonVisible = prefs.getBoolean(KEY_VISIBLE, true);
+            savedX = prefs.getFloat(KEY_X, -1f);
+            savedY = prefs.getFloat(KEY_Y, -1f);
+            prefsLoaded = true;
+        } catch (Throwable ignored) {}
+    }
+
+    private static void saveVisibility(Context ctx, boolean visible) {
+        try {
+            SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit().putBoolean(KEY_VISIBLE, visible).apply();
+        } catch (Throwable ignored) {}
+    }
+
+    private static void savePosition(Context ctx, float x, float y) {
+        try {
+            SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            prefs.edit().putFloat(KEY_X, x).putFloat(KEY_Y, y).apply();
+            savedX = x;
+            savedY = y;
         } catch (Throwable ignored) {}
     }
 

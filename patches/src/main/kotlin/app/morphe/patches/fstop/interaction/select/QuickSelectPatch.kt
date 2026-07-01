@@ -14,36 +14,54 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 /**
  * Patch to add a quick select icon button in F-Stop's media viewer.
  *
- * IMPLEMENTATION DETAILS:
+ * IMPLEMENTATION DETAILS (v12 — floating draggable PiP-style button):
  *
- * 1. Auto-hide: Hook I2() and a4() directly to show/hide the button.
+ * 1. Floating draggable button: The Quick Select button uses absolute X/Y
+ *    positioning and an OnTouchListener that distinguishes tap vs drag via
+ *    the system touch-slop threshold. Tapping toggles selection; dragging
+ *    moves the button (position is persisted to SharedPreferences). This
+ *    mirrors YouTube vanilla Picture-in-Picture behavior.
  *
- * 2. Selection indicator: Button icon changes (gray circle outline → green checkmark).
+ * 2. Persistent visibility (NOT auto-hidden on fullscreen):
+ *    The button's visibility is controlled exclusively by the user via a
+ *    "Hide Quick Select" / "Show Quick Select" menu item added to the 3-dot
+ *    context menu. The previous behavior that hid the button when entering
+ *    fullscreen mode (I2()) has been REMOVED. The button now stays visible
+ *    across fullscreen transitions unless the user explicitly hides it.
+ *    The visibility state is persisted to SharedPreferences.
+ *
+ * 3. Selection indicator: Button icon changes (gray circle outline → green checkmark).
  *    Uses c3.t.z() for reliable state checking.
  *
- * 3. Toggle: Calls X(boolean) to set per-item selected flag.
+ * 4. Toggle: Calls X(boolean) to set per-item selected flag.
  *    Do NOT call c0(int) — it sets L (FAVORITES), not selection!
  *
- * 4. Bidirectional sync:
+ * 5. Bidirectional sync:
  *    Direction 1 (Button → FilmStrip): Set p1.m + FilmStrip.D + invalidate()
  *    Direction 2 (FilmStrip → Button): Hook g(I Z)V — the native selection callback
  *    that is called by FilmStrip$a.onLongPress() after user long-presses a thumbnail.
  *    When g() fires, c3/t.X() has already been called, so z() reflects the new state.
  *
- * 5. Page change: Hooks M3() in ViewImageActivityNew (called from onPageSelected
+ * 6. Page change: Hooks M3() in ViewImageActivityNew (called from onPageSelected
  *    in inner class $o) to update the button icon immediately when swiping.
  *    M3() is in ViewImageActivityNew itself, so p0 = this = Activity (type-safe!).
  *
- * 6. Native select items: The native savePositionAndZoomMenuItem and
+ * 7. Native select items: The native savePositionAndZoomMenuItem and
  *    resetPositionAndZoomMenuItem are hidden since our button replaces their
  *    selection-related visibility behavior.
  *
  * BYTECODE HOOKS:
  * - onCreateOptionsMenu: After menu inflation, calls addSelectButton(Activity, Menu)
+ *   — also injects the "Hide/Show Quick Select" menu item into the 3-dot menu.
  * - onPrepareOptionsMenu: After x2(menu), calls updateSelectButtonIcon(Activity, Menu)
+ *   — also refreshes the toggle menu item's title.
  * - M3(): Before return-void, calls onPageChanged(Activity)
  * - I2() (hide toolbar): Before return-void, calls onToolbarHidden(Activity)
+ *   — note: in v12 this NO LONGER hides the button; it only re-applies the
+ *   user's persisted visibility preference.
  * - a4() (show toolbar): Before return-void, calls onToolbarShown(Activity)
+ *   — note: in v12 this NO LONGER forces the button visible; it only
+ *   re-applies the user's persisted visibility preference.
  * - g(I Z) (native selection callback): Before return-void, calls onNativeSelectionChange(Activity)
  */
 @Suppress("unused")
@@ -165,8 +183,17 @@ val quickSelectPatch = bytecodePatch(
         }
 
         // ============================================================
-        // Part 4: Hook I2() (hide toolbar) to hide quick select button
+        // Part 4: Hook I2() (hide toolbar / enter fullscreen)
         // ============================================================
+        // In v12, this hook NO LONGER hides the Quick Select button. The
+        // previous behavior of auto-hiding the button when entering
+        // fullscreen mode has been REMOVED by user request. The button now
+        // stays visible across fullscreen transitions unless the user
+        // explicitly hides it via the 3-dot menu.
+        //
+        // The hook is kept so that onToolbarHidden() can re-apply the user's
+        // persisted visibility preference (in case something else changed
+        // the button's visibility state).
         HideToolbarFingerprint.method.apply {
             val impl = implementation!!
 
@@ -183,15 +210,21 @@ val quickSelectPatch = bytecodePatch(
             addInstructions(
                 returnIndex,
                 """
-                    # Quick Select: hide button when toolbar is hidden
+                    # Quick Select: re-apply visibility preference on fullscreen entry
                     invoke-static {p0}, $EXTENSION_CLASS->onToolbarHidden(Landroid/app/Activity;)V
                 """,
             )
         }
 
         // ============================================================
-        // Part 5: Hook a4() (show toolbar) to show quick select button
+        // Part 5: Hook a4() (show toolbar / exit fullscreen)
         // ============================================================
+        // In v12, this hook NO LONGER forces the button visible. The button's
+        // visibility is controlled exclusively by the user's persisted
+        // preference (set via the 3-dot menu's "Hide/Show Quick Select" item).
+        //
+        // The hook is kept so that onToolbarShown() can re-apply the user's
+        // preference when exiting fullscreen mode.
         ShowToolbarFingerprint.method.apply {
             val impl = implementation!!
 
@@ -208,7 +241,7 @@ val quickSelectPatch = bytecodePatch(
             addInstructions(
                 returnIndex,
                 """
-                    # Quick Select: show button when toolbar is shown
+                    # Quick Select: re-apply visibility preference on fullscreen exit
                     invoke-static {p0}, $EXTENSION_CLASS->onToolbarShown(Landroid/app/Activity;)V
                 """,
             )
