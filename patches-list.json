@@ -2512,7 +2512,7 @@
     },
     {
       "name": "Disable telemetry",
-      "description": "Disables Bugsnag crash reporting (both Java and native), and Firebase Analytics event tracking. Prevents F-Stop from sending crash reports, device information, and usage analytics to third-party servers.",
+      "description": "Stops F-Stop from sending crash reports, device info, and usage data to third-party analytics services.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
@@ -6303,8 +6303,36 @@
       "options": []
     },
     {
+      "name": "Persist folder cover metadata",
+      "description": "Makes folder cover thumbnails load instantly on restart, just like image thumbnails do. The first time you view a folder its cover is remembered, so every restart after that shows all your folder covers immediately instead of loading them one by one.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Persist folder thumbnails",
-      "description": "Fixes thumbnail disappearance when F-Stop has 3000+ folders. 1) NOPs the 8 automatic y1.b() call sites (OOM catch blocks + system memory callbacks) so the in-memory cache is never auto-cleared. 2) Increases LRU cache size from 50 to 500 entries. 3) THE KEY FIX: saves every on-demand-loaded thumbnail to SQLite ASYNCHRONOUSLY via y1.h() → OnDemandThumbnailSaver → e3/b.Y1(). v5: saveToSQLite() is now async — returns immediately, SQLite write happens on a background thread. This makes thumbnail loading as fast as vanilla (v4 was 3-7x slower due to synchronous SQLite writes). CHECKPOINT_INTERVAL increased from 1 to 50 for less I/O overhead. 4) Suppresses 'Scanning media' notification when 'Create thumbnails in advance' is OFF by patching DatabaseUpdaterService.j() to return only b0.X2. Vanilla behavior is preserved when the setting is ON. y1.b() itself is left intact so the Settings -> Main -> Cache -> 'Refresh thumbnail cache' button still works as intended.",
+      "description": "Keeps image thumbnails from disappearing when you have a lot of folders. Thumbnails you've already seen will stay cached and load instantly, even after force-stopping or restarting the app. Also hides the annoying 'Scanning media' notification when 'Create thumbnails in advance' is turned off.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
@@ -6516,7 +6544,7 @@
     },
     {
       "name": "Quick select in media viewer",
-      "description": "Adds a select/deselect toggle icon button below the header bar in the media viewer, allowing quick one-tap selection of the currently viewed image or video without needing to long-press on the FilmStrip. The button automatically hides in fullscreen mode and syncs selection state with the FilmStrip thumbnails.",
+      "description": "Adds a quick select button in the image viewer so you can select or deselect the current photo or video with a single tap instead of long-pressing on the thumbnail strip.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
@@ -7487,7 +7515,7 @@
     },
     {
       "name": "Side-by-side installation",
-      "description": "Changes the package name to allow installing the patched app alongside the original. Also updates hardcoded ContentProvider authority strings and JNI paths in bytecode to match the new package name. Without these bytecode fixes, the app would crash because providers cannot resolve URIs and the Editor would fail with 'path not found'.",
+      "description": "Lets you install this patched version alongside the original F-Stop from the Play Store, so both can coexist on the same device.",
       "default": true,
       "dependencies": [
         "ResourcePatch",
@@ -8254,34 +8282,6 @@
       ]
     },
     {
-      "name": "Thumbnail cache logger",
-      "description": "Injects log statements into F-Stop's thumbnail pipeline (tagged \"MorpheFstop\") so you can diagnose thumbnail-load latency, cache-hit rates, and cache-clear events via logcat. Logs APP_ONCREATE (app startup), VIEWPOINT_ENTER (MainActivity onResume), BITMAP_LOADED (y1.h store), BITMAP_CACHE_HIT (y1.f cache hit), CACHE_CLEARED (y1.b), SQLITE_READ (e3/b.a0 SQLite thumbnail read attempt), and SQLITE_WRITE (e3/b.Y1 prescan save to SQLite). The SQLITE_READ/WRITE events let you diagnose why thumbnails don't survive a force-stop: if you see SQLITE_WRITE events, prescan IS running; if SQLITE_READ events on restart are followed by slow BITMAP_LOADED events, the SQLite cache is incomplete (prescan was interrupted). Safe to combine with the Persist folder thumbnails patch — this patch only adds logging, it does not change caching behavior.",
-      "default": true,
-      "dependencies": [],
-      "compatiblePackages": [
-        {
-          "packageName": "com.fstop.photo",
-          "name": "F-Stop",
-          "description": null,
-          "apkFileType": "APK_REQUIRED",
-          "appIconColor": "#2196F3",
-          "signatures": [
-            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
-          ],
-          "targets": [
-            {
-              "version": "5.5.484",
-              "versionCodes": null,
-              "isExperimental": false,
-              "minSdk": 24,
-              "description": null
-            }
-          ]
-        }
-      ],
-      "options": []
-    },
-    {
       "name": "Track crossfade",
       "description": "Adds a true dual-player crossfade between consecutive tracks. This patch currently requires YouTube 8.x",
       "default": true,
@@ -8351,7 +8351,7 @@
     },
     {
       "name": "True lazy load folder thumbnails",
-      "description": "Makes F-Stop's folder cover thumbnail loading truly viewport-prioritized. Stock behavior: the 'ThumbnailDataSetter' queue (Lcom/fstop/photo/x1;) processes folder cover path lookups in FIFO order, so when you open the app and scroll down fast, top folders get their cover paths resolved first and bottom folders have to wait. Combined with the downstream 'ThumbnailReader' queue (Lcom/fstop/photo/z1;) which is already LIFO, this means bottom thumbnails cannot be loaded until x1 catches up — making scroll-to-bottom feel very slow. This patch changes x1.a(Lc3/e;)V to insert at HEAD (LIFO) instead of END (FIFO), matching z1's behavior. After this patch, both queues are LIFO: the most recently scrolled-to viewport items get their cover paths resolved first AND their bitmaps loaded first. Works alongside the 'Create thumbnails in advance' setting (prescanThumbnails) — if prescan is OFF (lazy load), this patch makes the lazy load actually viewport-aware. If prescan is ON, this patch has no effect (because prescan pre-generates thumbnails in advance and x1 is not on the hot path).",
+      "description": "Makes folder covers load in the order you actually see them. When you scroll down fast, the folders currently on screen load first instead of waiting for ones you've already scrolled past.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [
@@ -8379,7 +8379,7 @@
     },
     {
       "name": "Unlock premium",
-      "description": "Bypasses all license checks, making s3.a.d() and s3.a.e() always return true. Unconditionally unlocks all premium features. Enabled by default.",
+      "description": "Unlocks all premium features for free.",
       "default": true,
       "dependencies": [],
       "compatiblePackages": [

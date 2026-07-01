@@ -136,21 +136,11 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 @Suppress("unused")
 val persistFolderThumbnailsPatch = bytecodePatch(
     name = "Persist folder thumbnails",
-    description = "Fixes thumbnail disappearance when F-Stop has 3000+ folders. " +
-        "1) NOPs the 8 automatic y1.b() call sites (OOM catch blocks + system memory callbacks) " +
-        "so the in-memory cache is never auto-cleared. " +
-        "2) Increases LRU cache size from 50 to 500 entries. " +
-        "3) THE KEY FIX: saves every on-demand-loaded thumbnail to SQLite ASYNCHRONOUSLY " +
-        "via y1.h() → OnDemandThumbnailSaver → e3/b.Y1(). " +
-        "v5: saveToSQLite() is now async — returns immediately, SQLite write happens " +
-        "on a background thread. This makes thumbnail loading as fast as vanilla " +
-        "(v4 was 3-7x slower due to synchronous SQLite writes). " +
-        "CHECKPOINT_INTERVAL increased from 1 to 50 for less I/O overhead. " +
-        "4) Suppresses 'Scanning media' notification when 'Create thumbnails in advance' " +
-        "is OFF by patching DatabaseUpdaterService.j() to return only b0.X2. " +
-        "Vanilla behavior is preserved when the setting is ON. " +
-        "y1.b() itself is left intact so the Settings -> Main -> Cache -> " +
-        "'Refresh thumbnail cache' button still works as intended.",
+    description = "Keeps image thumbnails from disappearing when you have a " +
+        "lot of folders. Thumbnails you've already seen will stay cached and " +
+        "load instantly, even after force-stopping or restarting the app. " +
+        "Also hides the annoying 'Scanning media' notification when " +
+        "'Create thumbnails in advance' is turned off.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 
@@ -384,10 +374,9 @@ val persistFolderThumbnailsPatch = bytecodePatch(
         // and c$a.a (package-private) from the extension package.
         // Direct field access causes IllegalAccessError at runtime.
         //
-        // We reuse the existing MainActivityOnResumeFingerprint from
-        // the thumbnailslogger package.
+        // We reuse the local MainActivityOnResumeFingerprint.
         val PRELOADER_CLASS = "Lapp/morphe/extension/fstop/FolderCoverPreloader;"
-        app.morphe.patches.fstop.misc.thumbnailslogger.MainActivityOnResumeFingerprint.method.apply {
+        MainActivityOnResumeFingerprint.method.apply {
             val impl = implementation!!
             addInstructions(1, """
                 invoke-static {}, $PRELOADER_CLASS->preloadAsync()V

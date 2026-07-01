@@ -14,19 +14,10 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 @Suppress("unused")
 val persistFolderCoverMetadataPatch = bytecodePatch(
     name = "Persist folder cover metadata",
-    description = "Makes folder cover thumbnails load INSTANTLY from cache " +
-        "on restart, exactly like image thumbnails. ROOT CAUSE: image " +
-        "thumbnails survive force-stop via SQLite Thumbnail table. Folder " +
-        "covers have NO on-disk cache — c.a HashMap is cleared on force-stop, " +
-        "and e3.b.O0() re-runs the slow LIMIT 4 query per folder. F-Stop's " +
-        "FolderData.ThumbnailImageId column was meant to cache this, but " +
-        "is ONLY populated by manual 'Set as folder cover' (z3) — the folder " +
-        "scanner does NOT create FolderData rows. FIX: replace O0() in " +
-        "c.b() with FolderCoverResolver. FAST PATH: indexed JOIN query " +
-        "(FolderData.ThumbnailImageId > 0) → skip O0(), ~1ms. SLOW PATH: " +
-        "O0() then INSERT OR REPLACE into FolderData (creates row if missing " +
-        "— this is the v3 bug: UPDATE was a no-op on missing rows). Works " +
-        "with prescanThumbnails ON or OFF.",
+    description = "Makes folder cover thumbnails load instantly on restart, " +
+        "just like image thumbnails do. The first time you view a folder its " +
+        "cover is remembered, so every restart after that shows all your " +
+        "folder covers immediately instead of loading them one by one.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 

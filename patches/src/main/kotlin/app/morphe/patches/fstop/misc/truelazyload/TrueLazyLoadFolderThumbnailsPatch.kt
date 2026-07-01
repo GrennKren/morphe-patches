@@ -125,24 +125,10 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 @Suppress("unused")
 val trueLazyLoadFolderThumbnailsPatch = bytecodePatch(
     name = "True lazy load folder thumbnails",
-    description = "Makes F-Stop's folder cover thumbnail loading truly " +
-        "viewport-prioritized. Stock behavior: the 'ThumbnailDataSetter' " +
-        "queue (Lcom/fstop/photo/x1;) processes folder cover path lookups " +
-        "in FIFO order, so when you open the app and scroll down fast, top " +
-        "folders get their cover paths resolved first and bottom folders " +
-        "have to wait. Combined with the downstream 'ThumbnailReader' " +
-        "queue (Lcom/fstop/photo/z1;) which is already LIFO, this means " +
-        "bottom thumbnails cannot be loaded until x1 catches up — making " +
-        "scroll-to-bottom feel very slow. This patch changes x1.a(Lc3/e;)V " +
-        "to insert at HEAD (LIFO) instead of END (FIFO), matching z1's " +
-        "behavior. After this patch, both queues are LIFO: the most " +
-        "recently scrolled-to viewport items get their cover paths " +
-        "resolved first AND their bitmaps loaded first. Works alongside " +
-        "the 'Create thumbnails in advance' setting (prescanThumbnails) — " +
-        "if prescan is OFF (lazy load), this patch makes the lazy load " +
-        "actually viewport-aware. If prescan is ON, this patch has no " +
-        "effect (because prescan pre-generates thumbnails in advance and " +
-        "x1 is not on the hot path).",
+    description = "Makes folder covers load in the order you actually see " +
+        "them. When you scroll down fast, the folders currently on screen " +
+        "load first instead of waiting for ones you've already scrolled " +
+        "past.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 

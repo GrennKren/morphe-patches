@@ -49,11 +49,9 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 @Suppress("unused")
 val quickSelectPatch = bytecodePatch(
     name = "Quick select in media viewer",
-    description = "Adds a select/deselect toggle icon button below the header bar " +
-        "in the media viewer, allowing quick one-tap selection of the currently " +
-        "viewed image or video without needing to long-press on the FilmStrip. " +
-        "The button automatically hides in fullscreen mode and syncs selection " +
-        "state with the FilmStrip thumbnails.",
+    description = "Adds a quick select button in the image viewer so you " +
+        "can select or deselect the current photo or video with a single " +
+        "tap instead of long-pressing on the thumbnail strip.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 

@@ -49,9 +49,8 @@ import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 @Suppress("unused")
 val disableTelemetryPatch = bytecodePatch(
     name = "Disable telemetry",
-    description = "Disables Bugsnag crash reporting (both Java and native), " +
-        "and Firebase Analytics event tracking. Prevents F-Stop from sending " +
-        "crash reports, device information, and usage analytics to third-party servers.",
+    description = "Stops F-Stop from sending crash reports, device info, " +
+        "and usage data to third-party analytics services.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 

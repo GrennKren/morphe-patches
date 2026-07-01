@@ -52,11 +52,9 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 @Suppress("unused")
 val sideBySidePatch = bytecodePatch(
     name = "Side-by-side installation",
-    description = "Changes the package name to allow installing the patched app " +
-        "alongside the original. Also updates hardcoded ContentProvider authority " +
-        "strings and JNI paths in bytecode to match the new package name. " +
-        "Without these bytecode fixes, the app would crash because providers " +
-        "cannot resolve URIs and the Editor would fail with 'path not found'.",
+    description = "Lets you install this patched version alongside the " +
+        "original F-Stop from the Play Store, so both can coexist on the " +
+        "same device.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)

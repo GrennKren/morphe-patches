@@ -33,9 +33,7 @@ import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 @Suppress("unused")
 val unlockPremiumPatch = bytecodePatch(
     name = "Unlock premium",
-    description = "Bypasses all license checks, making s3.a.d() and s3.a.e() " +
-        "always return true. Unconditionally unlocks all premium features. " +
-        "Enabled by default.",
+    description = "Unlocks all premium features for free.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)

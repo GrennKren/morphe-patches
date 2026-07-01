@@ -233,7 +233,5 @@ public final class FolderCoverPreloader {
                 + " skippedNoImage=" + skippedNoImage
                 + " cacheSize=" + cache.size()
                 + " elapsed=" + elapsed + "ms");
-
-        ThumbnailLogger.onPreloadCovers(preloadedCount, skippedNoImage, elapsed);
     }
 }

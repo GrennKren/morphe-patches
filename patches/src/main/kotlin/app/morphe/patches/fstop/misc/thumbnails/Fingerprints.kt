@@ -395,3 +395,22 @@ internal object DatabaseUpdaterServiceShouldShowNotificationFingerprint : Finger
     // Verified: no other public boolean no-arg methods in this class
     // that have the same sget/sget-boolean pattern.
 )
+
+/**
+ * Fingerprint for `Lcom/fstop/photo/activity/MainActivity;->onResume()V`.
+ *
+ * Calls super.onResume() (FragmentActivity.onResume) as the first instruction.
+ * Used to inject FolderCoverPreloader.preloadAsync() on app startup.
+ */
+internal object MainActivityOnResumeFingerprint : Fingerprint(
+    definingClass = "Lcom/fstop/photo/activity/MainActivity;",
+    returnType = "V",
+    accessFlags = listOf(AccessFlags.PUBLIC),
+    parameters = listOf(),
+    filters = listOf(
+        methodCall(
+            definingClass = "Landroidx/fragment/app/FragmentActivity;",
+            name = "onResume",
+        ),
+    ),
+)
