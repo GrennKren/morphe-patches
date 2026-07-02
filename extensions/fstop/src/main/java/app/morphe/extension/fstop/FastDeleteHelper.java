@@ -30,37 +30,28 @@ import c3.t;
 /**
  * Helper class for the "Fast batch delete" patch in F-Stop.
  *
- * <h2>v6 — Fix: correct path resolution for Recycle Bin items</h2>
+ * <h2>v10 — Branch on field U (no File.exists() syscall)</h2>
  *
- * <h3>Root cause of v5 slowness for Recycle Bin deletion</h3>
- * When a file is moved to the Recycle Bin, stock code (via G2()) modifies
- * the DB FullPath to {@code original_path + "_" + imageId}. The actual
- * file is physically at {@code p.D1(imageId)} (the recycle bin directory).
+ * <h3>Root cause of v9 RB slowness</h3>
+ * v9 used {@code File(tVar.j).exists()} to detect RB items. For RB items,
+ * {@code tVar.j} is the modified DB path ({@code original_path + "_" + imageId}),
+ * so File.exists() returns false — but the syscall itself + File object
+ * allocation per file adds overhead that v6 didn't have.
  *
- * <p>Stock {@code w(t)} handles this correctly by calling {@code tVar.N(false)}
- * which checks field {@code U} (non-zero for recycle bin items) and returns
- * an {@code o8.e} wrapper for the REAL recycle bin path via {@code p.D1(i)}.</p>
+ * <p>Stock code uses field {@code U} (long timestamp, non-zero when item is
+ * in Recycle Bin) to detect RB items — this is a simple field read with
+ * NO syscall. v6 used N(false) which checks field U internally.</p>
  *
- * <p>v5 bypassed {@code w(t)} and used {@code new File(tVar.j).delete()}
- * directly. For recycle bin items, {@code tVar.j} is the MODIFIED DB path
- * (original + "_" + ID), not the actual file path. So {@code File.delete()}
- * silently failed (file not found at modified path), and v5 set
- * {@code deleted = true} without actually deleting the physical file.</p>
- *
- * <h3>v6 fix</h3>
- * Use {@code tVar.N(false)} to get the correct file wrapper, then call
- * {@code wrapper.b()} to delete. This matches stock {@code w(t)} behavior:
+ * <h3>v10 fix — branch on tVar.U != 0</h3>
  * <ul>
- *   <li>For recycle bin items (U != 0): N() returns o8.e for D1(imageId)
- *       → File.delete() on recycle bin path → correct</li>
- *   <li>For normal local files: N() returns o8.e for original path
- *       → File.delete() → correct</li>
- *   <li>For SAF paths (no MANAGE_EXTERNAL_STORAGE): N() returns o8.g
- *       → DocumentsContract.deleteDocument() → correct (SAF)</li>
+ *   <li><b>Non-RB items</b> ({@code tVar.U == 0}): {@code File.delete()}
+ *       directly (v5/v7 fast path — no wrapper, no syscall check).</li>
+ *   <li><b>RB items</b> ({@code tVar.U != 0}): {@code N(false).b()} + XMP
+ *       sidecar via {@code o8.d.f()} (v6 logic — verified instant by user).</li>
  * </ul>
  *
- * Also replicate w(t)'s XMP sidecar file deletion: after deleting the
- * main file, delete the .xmp sidecar if it exists.
+ * <p>Field {@code U} added to stub {@code c3.t.java} as {@code public long U}
+ * (matches stock DEX field {@code Lc3/t;->U:J}).</p>
  *
  * <h3>Thread safety</h3>
  * b0.Z (HashSet) is accessed by w(t) unsynchronized in stock code.
@@ -117,8 +108,9 @@ public final class FastDeleteHelper {
             final AtomicInteger fileDeleteSuccess = new AtomicInteger(0);
             final AtomicInteger fileDeleteFailed = new AtomicInteger(0);
 
-            // ── Group C: Parallel delete for local files (includes Recycle Bin items) ──
-            // Use N(false).b() to get the CORRECT file path (recycle bin path for RB items).
+            // ── Group C: Parallel delete for local files ──
+            // v7: branch on File(tVar.j).exists() to isolate RB path resolution
+            // from the common non-RB happy path (which stays as fast as v5).
             if (!localFiles.isEmpty()) {
                 final int localSize = localFiles.size();
                 final ExecutorService executor = Executors.newFixedThreadPool(
@@ -132,51 +124,59 @@ public final class FastDeleteHelper {
 
                     executor.execute(() -> {
                         try {
-                            // Get the CORRECT file wrapper via N(false).
-                            // For recycle bin items (U!=0), this returns o8.e for D1(imageId).
-                            // For normal files, this returns o8.e for the original path.
-                            // For SAF paths, this returns o8.g (SAF wrapper).
-                            Object Nobj = tVar.N(false);
-                            if (Nobj == null) {
-                                fileDeleteFailed.incrementAndGet();
-                                synchronized (failedLocalFiles) {
-                                    failedLocalFiles.add(tVar);
-                                }
-                                return;
-                            }
+                            // v10: branch on field U (no File.exists() syscall).
+                            // U is long timestamp, non-zero = RB item.
+                            String realPath;          // path used for parent cache + b0.Z
+                            boolean deleted;
 
-                            o8.d N = (o8.d) Nobj;
-                            String realPath = N.d();  // actual file path
-
-                            // Folder cache invalidation
-                            String parent = new File(realPath).getParent();
-                            if (parent != null) {
-                                synchronized (parentDirsToInvalidate) {
-                                    parentDirsToInvalidate.add(parent);
-                                }
-                            }
-
-                            // Delete the file via wrapper.b()
-                            // o8.e.b() = File.delete() (fast)
-                            // o8.g.b() = DocumentsContract.deleteDocument() (SAF, correct)
-                            boolean deleted = N.b();
-                            if (!deleted && !N.c()) {
-                                // Delete failed but file doesn't exist — consider it deleted.
-                                // This matches stock w(t) behavior.
-                                deleted = true;
-                            }
-
-                            if (deleted) {
-                                fileDeleteSuccess.incrementAndGet();
-
-                                // Track deleted path (synchronized — b0.Z is HashSet)
-                                if (b0.Z != null) {
-                                    synchronized (b0.Z) {
-                                        b0.Z.add(tVar.j);
+                            if (tVar.U == 0L) {
+                                // ── Non-RB happy path (v5/v7 fast path) ──
+                                // File is at tVar.j — delete directly via File.delete().
+                                // No wrapper allocation, no XMP sidecar.
+                                realPath = tVar.j;
+                                deleted = new File(tVar.j).delete();
+                                if (!deleted) {
+                                    // File.delete() failed — likely SAF-only path
+                                    // (Android 11+ without MANAGE_EXTERNAL_STORAGE).
+                                    // Collect for sequential w() fallback.
+                                    fileDeleteFailed.incrementAndGet();
+                                    synchronized (failedLocalFiles) {
+                                        failedLocalFiles.add(tVar);
                                     }
+                                    return;
+                                }
+                            } else {
+                                // ── RB item path (v6 logic — VERIFIED INSTANT) ──
+                                // U != 0 → recycle bin item. Use N(false).b() —
+                                // N(false) checks field U and returns o8.e wrapper
+                                // for D1(imageId) (the real RB path), and
+                                // o8.e.b() = File.delete() = direct syscall (instant).
+                                Object Nobj = tVar.N(false);
+                                if (Nobj == null) {
+                                    fileDeleteFailed.incrementAndGet();
+                                    synchronized (failedLocalFiles) {
+                                        failedLocalFiles.add(tVar);
+                                    }
+                                    return;
+                                }
+                                o8.d N = (o8.d) Nobj;
+                                realPath = N.d();  // actual RB path (p.D1(imageId))
+                                deleted = N.b();
+                                if (!deleted && !N.c()) {
+                                    // Delete failed but file doesn't exist at RB path either —
+                                    // consider it deleted (matches stock w(t) behavior).
+                                    deleted = true;
+                                }
+                                if (!deleted) {
+                                    fileDeleteFailed.incrementAndGet();
+                                    synchronized (failedLocalFiles) {
+                                        failedLocalFiles.add(tVar);
+                                    }
+                                    return;
                                 }
 
-                                // Delete XMP sidecar file (stock w(t) does this)
+                                // XMP sidecar deletion ONLY for RB items (matches stock w(t)).
+                                // Use o8.d.f() wrapper (v6 logic).
                                 try {
                                     String xmpPath = p.R1(realPath);
                                     o8.d xmpWrapper = o8.d.f(xmpPath, ctx);
@@ -186,20 +186,33 @@ public final class FastDeleteHelper {
                                 } catch (Exception e) {
                                     // XMP deletion failure is not critical
                                 }
+                            }
 
-                                synchronized (deletedItems) {
-                                    deletedItems.add(tVar);
+                            // ── Common success path ──
+                            fileDeleteSuccess.incrementAndGet();
+
+                            // Folder cover cache invalidation
+                            String parent = new File(realPath).getParent();
+                            if (parent != null) {
+                                synchronized (parentDirsToInvalidate) {
+                                    parentDirsToInvalidate.add(parent);
                                 }
-                                // MediaStore cleanup only for Q==0 (local with MediaStore entry)
-                                if (tVar.Q == 0) {
-                                    synchronized (pathsForMediaStoreCleanup) {
-                                        pathsForMediaStoreCleanup.add(tVar.j);
-                                    }
+                            }
+
+                            // Track deleted path (synchronized — b0.Z is HashSet)
+                            if (b0.Z != null) {
+                                synchronized (b0.Z) {
+                                    b0.Z.add(tVar.j);
                                 }
-                            } else {
-                                fileDeleteFailed.incrementAndGet();
-                                synchronized (failedLocalFiles) {
-                                    failedLocalFiles.add(tVar);
+                            }
+
+                            synchronized (deletedItems) {
+                                deletedItems.add(tVar);
+                            }
+                            // MediaStore cleanup only for Q==0 (local with MediaStore entry)
+                            if (tVar.Q == 0) {
+                                synchronized (pathsForMediaStoreCleanup) {
+                                    pathsForMediaStoreCleanup.add(tVar.j);
                                 }
                             }
 
