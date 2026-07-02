@@ -49,6 +49,13 @@ public class t {
     public int Q;
     /** Used by d3.i.b(R, S) for Q==2 cloud deletes (real DEX name). */
     public String R;
+    /**
+     * Recycle Bin timestamp (real DEX name, public, long).
+     * Non-zero when item is in Recycle Bin. Stock N(false) checks this field
+     * to decide whether to return o8.e for D1(imageId) (RB path) or for tVar.j.
+     * Used by FastDeleteHelper to branch RB vs non-RB without File.exists() syscall.
+     */
+    public long U;
 
     /** Stock: returns the file wrapper (o8.d) for this item's path. */
     public o8.d N(boolean z) { return null; }

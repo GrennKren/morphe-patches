@@ -30,35 +30,28 @@ import c3.t;
 /**
  * Helper class for the "Fast batch delete" patch in F-Stop.
  *
- * <h2>v9 — Restore v6 RB logic (N(false).b() confirmed instant by user)</h2>
+ * <h2>v10 — Branch on field U (no File.exists() syscall)</h2>
  *
- * <h3>Root cause of v8 RB slowness</h3>
- * v8 tried to "optimize" RB deletion by using {@code p.D1(imageId)} + direct
- * {@code File.delete()}, with {@code N(false).b()} as inline fallback when
- * File.delete() fails. This was WRONG:
+ * <h3>Root cause of v9 RB slowness</h3>
+ * v9 used {@code File(tVar.j).exists()} to detect RB items. For RB items,
+ * {@code tVar.j} is the modified DB path ({@code original_path + "_" + imageId}),
+ * so File.exists() returns false — but the syscall itself + File object
+ * allocation per file adds overhead that v6 didn't have.
+ *
+ * <p>Stock code uses field {@code U} (long timestamp, non-zero when item is
+ * in Recycle Bin) to detect RB items — this is a simple field read with
+ * NO syscall. v6 used N(false) which checks field U internally.</p>
+ *
+ * <h3>v10 fix — branch on tVar.U != 0</h3>
  * <ul>
- *   <li>{@code File.delete()} on the {@code p.D1()} path frequently fails for
- *       RB items (path permission / cache state), causing the inline fallback
- *       {@code N(false).b()} to be invoked on every file — but with the extra
- *       overhead of a failed File.delete() syscall before it.</li>
- *   <li>User verified v6 RB deletion was INSTANT — v6 used
- *       {@code N(false).b()} directly with no File.delete() pre-attempt.</li>
+ *   <li><b>Non-RB items</b> ({@code tVar.U == 0}): {@code File.delete()}
+ *       directly (v5/v7 fast path — no wrapper, no syscall check).</li>
+ *   <li><b>RB items</b> ({@code tVar.U != 0}): {@code N(false).b()} + XMP
+ *       sidecar via {@code o8.d.f()} (v6 logic — verified instant by user).</li>
  * </ul>
  *
- * <h3>v9 fix — revert RB branch to v6 logic verbatim</h3>
- * RB branch now uses {@code tVar.N(false).b()} + XMP sidecar via
- * {@code o8.d.f()} (exactly v6 logic). User confirmed this is instant.
- *
- * <h3>Branching strategy</h3>
- * <ul>
- *   <li><b>Non-RB items</b> ({@code File(tVar.j).exists() == true}):
- *       {@code File.delete()} directly (v5/v7 fast path — no wrapper).</li>
- *   <li><b>RB items</b> ({@code File(tVar.j).exists() == false}):
- *       {@code N(false).b()} + XMP sidecar via {@code o8.d.f()}
- *       (v6 logic — verified instant by user).</li>
- *   <li><b>SAF fallback</b>: if {@code N(false).b()} also fails, collect for
- *       sequential {@code db.w()} fallback (handles SAF paths).</li>
- * </ul>
+ * <p>Field {@code U} added to stub {@code c3.t.java} as {@code public long U}
+ * (matches stock DEX field {@code Lc3/t;->U:J}).</p>
  *
  * <h3>Thread safety</h3>
  * b0.Z (HashSet) is accessed by w(t) unsynchronized in stock code.
@@ -131,18 +124,17 @@ public final class FastDeleteHelper {
 
                     executor.execute(() -> {
                         try {
-                            final File fileAtDbPath = new File(tVar.j);
-                            final boolean fileExistsAtDbPath = fileAtDbPath.exists();
-
+                            // v10: branch on field U (no File.exists() syscall).
+                            // U is long timestamp, non-zero = RB item.
                             String realPath;          // path used for parent cache + b0.Z
                             boolean deleted;
 
-                            if (fileExistsAtDbPath) {
+                            if (tVar.U == 0L) {
                                 // ── Non-RB happy path (v5/v7 fast path) ──
                                 // File is at tVar.j — delete directly via File.delete().
                                 // No wrapper allocation, no XMP sidecar.
                                 realPath = tVar.j;
-                                deleted = fileAtDbPath.delete();
+                                deleted = new File(tVar.j).delete();
                                 if (!deleted) {
                                     // File.delete() failed — likely SAF-only path
                                     // (Android 11+ without MANAGE_EXTERNAL_STORAGE).
@@ -154,17 +146,11 @@ public final class FastDeleteHelper {
                                     return;
                                 }
                             } else {
-                                // ── RB item path (v6 logic — VERIFIED FAST) ──
-                                // File NOT at tVar.j (modified DB path) → recycle bin item.
-                                // Use N(false).b() — this is the v6 logic that user confirmed
-                                // was INSTANT for RB deletion. N(false) returns o8.e wrapper
-                                // for D1(imageId) (the real RB path), and o8.e.b() = File.delete()
-                                // which is a direct syscall (instant).
-                                //
-                                // Do NOT use p.D1() + File.delete() directly (v8 attempt)
-                                // because File.delete() on D1 path can fail for RB items,
-                                // triggering slow fallback path. N(false).b() is the correct
-                                // stock-equivalent path that user verified as instant.
+                                // ── RB item path (v6 logic — VERIFIED INSTANT) ──
+                                // U != 0 → recycle bin item. Use N(false).b() —
+                                // N(false) checks field U and returns o8.e wrapper
+                                // for D1(imageId) (the real RB path), and
+                                // o8.e.b() = File.delete() = direct syscall (instant).
                                 Object Nobj = tVar.N(false);
                                 if (Nobj == null) {
                                     fileDeleteFailed.incrementAndGet();
@@ -190,8 +176,7 @@ public final class FastDeleteHelper {
                                 }
 
                                 // XMP sidecar deletion ONLY for RB items (matches stock w(t)).
-                                // Use o8.d.f() wrapper (v6 logic) — matches stock w(t) behavior.
-                                // Non-RB path skips this entirely (v5 behavior).
+                                // Use o8.d.f() wrapper (v6 logic).
                                 try {
                                     String xmpPath = p.R1(realPath);
                                     o8.d xmpWrapper = o8.d.f(xmpPath, ctx);
