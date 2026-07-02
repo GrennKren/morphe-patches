@@ -58,6 +58,8 @@ Second \"item\" text"</string>
   <string name="morphe_crossfade_duration_8000ms">8 sekondes</string>
   <string name="morphe_crossfade_duration_9000ms">9 sekondes</string>
   <string name="morphe_crossfade_duration_10000ms">10 sekondes</string>
+  <string name="morphe_crossfade_duration_11000ms">11 sekondes</string>
+  <string name="morphe_crossfade_duration_12000ms">12 sekondes</string>
   <string name="morphe_music_crossfade_on_skip_title">Kruisverdof tydens handspring</string>
   <string name="morphe_music_crossfade_on_skip_summary">Wendt die oorgangs effek toe wanneer jy handmatig na die volgende liedjie spring</string>
   <string name="morphe_music_crossfade_on_auto_advance_title">Kruisverdof op outo-vooruitgang</string>
@@ -67,15 +69,37 @@ Second \"item\" text"</string>
   <string name="morphe_music_crossfade_paused_toast">Die oorgangsvervaging is vir hierdie sessie gestop</string>
   <string name="morphe_music_crossfade_resumed_toast">Die oorgangsvervaging hervat</string>
   <string name="morphe_music_crossfade_video_mode_disabled_toast">Videoweergave is nie beskikbaar terwyl oorgangsvervaging geaktiveer is nie</string>
+  <string name="morphe_music_crossfade_cast_unstable_toast">Kruisvervaging is gepouseer tydens uitsending of spiegeling van klank. Kruisvervaging oor uitsending/spieëling is onstabiel en kan moontlik nooit reggestel word nie.</string>
   <string name="morphe_music_crossfade_about_title">Inligting</string>
-  <string name="morphe_music_crossfade_about_summary">"Kruisverdof is beskikbaar met YouTube Music 8.x
+  <string name="morphe_music_crossfade_about_summary">Hoe kruisvervaging werk — en wanneer dit nie werk nie</string>
+  <!-- Banner row has no text; it shows a full-width graphic via a custom layout. -->
+  <string name="morphe_music_crossfade_about_how_title">Hoe dit werk</string>
+  <string name="morphe_music_crossfade_about_how_summary">"Kruisvervaging oorvleuel die einde van een liedjie met die begin van die volgende, en laat een wegval terwyl die ander oor jou gekose duur en kurwe begin.
 
-Druk lank op die skuifknoppie om te deaktiveer/aktiveer
+Dit werk op outo-vooruitgang (wanneer 'n liedjie op sy eie eindig) en op handmatige oorslae — elkeen het sy eie skakelaar boaan. By outo-vooruitgang begin die mengsel 'n paar sekondes voor die einde van die liedjie.
 
-Funksie implementering deur VazerOG"</string>
+Vereis YouTube Music 9.x of nuwer."</string>
+  <string name="morphe_music_crossfade_about_best_title">Werk die beste met</string>
+  <string name="morphe_music_crossfade_about_best_summary">Normale liedjie-tot-liedjie-weergawe en outo-vooruitgang, herhaal-een (die liedjie kruisvervaag in sy eie), en plaaslike klank — foonluidspreker, bedrade oorfone, Bluetooth of USB.</string>
+  <string name="morphe_music_crossfade_about_quirks_title">Werk nie heeltemal reg nie</string>
+  <string name="morphe_music_crossfade_about_quirks_summary">"Musiekvideo's speel as klank-alleen terwyl vervaag aan is (druk lank op skud om te pouse as jy die video wil hê)
+
+Liedjies wat korter as jou vervaagduur is, kan die vervaag oorslaan
+
+Die sluitskerm of kennisgewing kan kortliks 'n verouderde status midde-oorgang wys"</string>
+  <string name="morphe_music_crossfade_about_known_title">Bekende probleme</string>
+  <string name="morphe_music_crossfade_about_known_summary">"‘n Musiekvideo wat as die eerste liedjie gestel is — of een wat van buite die huidige lys begin is — kan kortliks as video wys voordat klank-alleen modus begin
+
+Pauseer vervaag om ‘n musiekvideo te kyk kan sommige video's swart laat (die wat se klank van die video self kom). Pauseer vervaag voordat jy die liedjie kies om dit te vermy"</string>
+  <string name="morphe_music_crossfade_about_unsupported_title">Werk glad nie</string>
+  <string name="morphe_music_crossfade_about_unsupported_summary">"Klank-oordra of spiegel (Chromecast, skerm- of klankspieëling) — vervaag pouseer omdat dit daar onstabiel is en moontlik nooit reggestel kan word nie.
+
+YouTube Music 8.x — vervaag loop slegs op 9.x en nuwer"</string>
+  <string name="morphe_music_crossfade_about_credit_title">Erkenning</string>
+  <string name="morphe_music_crossfade_about_credit_summary">Vervaag-funksie deur VazerOG</string>
   <!-- interaction.permanentrepeat.permanentRepeatPatch -->
   <string name="morphe_music_play_permanent_repeat_title">Aktiveer permanente herhaling</string>
-  <!-- layout.buttons.hideButtons -->
+  <!-- layout.buttons.hideButtonsPatch -->
   <string name="morphe_music_hide_cast_button_title">Versteek Cast-knoppie</string>
   <string name="morphe_music_hide_history_button_title">Versteek geskiedenis-knoppie</string>
   <string name="morphe_music_hide_notification_button_title">Versteek kennisgewing-knoppie</string>
@@ -92,17 +116,20 @@ Funksie implementering deur VazerOG"</string>
   <string name="morphe_change_start_page_entry_playlists">Speellyste</string>
   <string name="morphe_change_start_page_entry_search">Soek</string>
   <string name="morphe_change_start_page_entry_subscriptions">Inskrywings</string>
-  <!-- layout.compactheader.hideCategoryBar -->
+  <!-- layout.compactheader.hideCategoryBarPatch -->
   <string name="morphe_music_hide_category_bar_title">Versteek kategoriebalk</string>
-  <!-- layout.miniplayer.changeMiniplayerColor -->
+  <!-- layout.miniplayer.changeMiniplayerColorPatch -->
   <string name="morphe_music_change_miniplayer_color_title">Verander miniplayer-kleur</string>
   <string name="morphe_music_change_miniplayer_color_summary">Pas die mini-speler se kleur aan die volskerm-speler se kleur aan</string>
-  <!-- layout.miniplayer.miniplayerNextPreviousButtons -->
+  <!-- layout.miniplayer.miniplayerNextPreviousButtonsPatch -->
   <string name="morphe_music_miniplayer_next_button_title">Wys volgende knoppie in miniplayer</string>
   <string name="morphe_music_miniplayer_previous_button_title">Wys vorige knoppie in miniplayer</string>
-  <!-- layout.miniplayer.enableForcedMiniplayer -->
+  <!-- layout.miniplayer.enableForcedMiniplayerPatch -->
   <string name="morphe_music_enable_forced_miniplayer_title">Aktiveer geforseerde miniplayer</string>
   <string name="morphe_music_enable_forced_miniplayer_summary">Verhoed dat die speler outomaties na volskerm aansit wanneer \'n nuwe liedjie begin</string>
+  <!-- layout.miniplayer.enableSwipeToDismissMiniplayerPatch -->
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_title">Aktiveer swip om mini-speler te verwyder</string>
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_summary">Laat toe om die mini-speler te verwyder deur daarop af te swiep</string>
   <!-- layout.navigationbar.navigationBarPatch -->
   <string name="morphe_music_navigation_bar_screen_title">Navigasiebalk</string>
   <string name="morphe_music_navigation_bar_screen_summary">Kies watter knoppies in die onderste navigasiebalk moet verskyn</string>

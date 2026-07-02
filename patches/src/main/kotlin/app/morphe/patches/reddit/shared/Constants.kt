@@ -15,26 +15,22 @@ internal object Constants {
         ),
         targets = listOf(
             AppTarget(
-                version = "2026.21.0",
+                version = "2026.25.0",
                 minSdk = 28,
                 isExperimental = true,
             ),
             AppTarget(
-                version = "2026.20.0",
+                version = "2026.24.0", // Last version with disable modern home.
                 minSdk = 28,
                 isExperimental = true,
             ),
             AppTarget(
-                version = "2026.19.0",
+                version = "2026.23.0",
                 minSdk = 28,
                 isExperimental = true,
             ),
             AppTarget(
                 version = "2026.14.0",
-                minSdk = 28,
-            ),
-            AppTarget(
-                version = "2026.10.0",
                 minSdk = 28,
             ),
             AppTarget(

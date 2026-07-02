@@ -58,6 +58,8 @@ Second \"item\" text"</string>
   <string name="morphe_crossfade_duration_8000ms">8 секунд</string>
   <string name="morphe_crossfade_duration_9000ms">9 секунд</string>
   <string name="morphe_crossfade_duration_10000ms">10 секунд</string>
+  <string name="morphe_crossfade_duration_11000ms">11 секунды</string>
+  <string name="morphe_crossfade_duration_12000ms">12 секунды</string>
   <string name="morphe_music_crossfade_on_skip_title">Плавный переход при ручном пропуске</string>
   <string name="morphe_music_crossfade_on_skip_summary">Применяет эффект кроссфейда при ручном переходе к следующему треку</string>
   <string name="morphe_music_crossfade_on_auto_advance_title">Плавный переход при автоматическом переходе</string>
@@ -67,15 +69,37 @@ Second \"item\" text"</string>
   <string name="morphe_music_crossfade_paused_toast">Воспроизведение с переходом поставлено на паузу для текущей сессии</string>
   <string name="morphe_music_crossfade_resumed_toast">Воспроизведение с переходом возобновлено</string>
   <string name="morphe_music_crossfade_video_mode_disabled_toast">Видеорежим недоступен при включенном плавном переходе</string>
+  <string name="morphe_music_crossfade_cast_unstable_toast">Во время воспроизведения аудио в режиме трансляции или зеркального отображения плавный переход между треками приостанавливается. Плавный переход при трансляции/зеркальном отображении может быть нестабильным и, возможно, никогда не будет исправлен.</string>
   <string name="morphe_music_crossfade_about_title">Информация</string>
-  <string name="morphe_music_crossfade_about_summary">"Плавный переход доступен с YouTube Music 8.x
+  <string name="morphe_music_crossfade_about_summary">Как работает плавный переход между треками — и в каких случаях он не работает</string>
+  <!-- Banner row has no text; it shows a full-width graphic via a custom layout. -->
+  <string name="morphe_music_crossfade_about_how_title">Как это работает</string>
+  <string name="morphe_music_crossfade_about_how_summary">"Плавный переход между треками накладывает конец одной песни на начало следующей, постепенно уменьшая громкость одной песни, одновременно увеличивая громкость другой в течение выбранной вами продолжительности и с выбранной кривой.
 
-Долгое нажатие на кнопку перемешивания позволяет отключить/включить функцию
+Он работает в режиме автоматического воспроизведения (когда песня заканчивается сама по себе) и при ручном пропуске — для каждого из них есть отдельный переключатель выше. В режиме автоматического воспроизведения смешивание начинается за несколько секунд до конца песни.
 
-Реализация функции VazerOG"</string>
+Требуется YouTube Music версии 9.x или более поздней."</string>
+  <string name="morphe_music_crossfade_about_best_title">Лучше всего работает с</string>
+  <string name="morphe_music_crossfade_about_best_summary">Обычное воспроизведение песен, автоматическое воспроизведение, повтор одной песни (песня плавно переходит в саму себя) и локальное аудио — динамик телефона, проводные наушники, Bluetooth или USB.</string>
+  <string name="morphe_music_crossfade_about_quirks_title">Работает не совсем корректно</string>
+  <string name="morphe_music_crossfade_about_quirks_summary">"Музыкальные видео воспроизводятся только в аудио режиме при включенном плавном переходе (удерживайте кнопку перемешивания, чтобы приостановить, если хотите видеть видео)
+
+Песни короче длительности затухания могут пропускать затухание
+
+Экран блокировки или уведомление могут кратковременно отображать устаревшее состояние во время перехода"</string>
+  <string name="morphe_music_crossfade_about_known_title">Известные проблемы</string>
+  <string name="morphe_music_crossfade_about_known_summary">"Музыкальное видео, установленное в качестве первой песни — или запущенное извне текущего плейлиста — может ненадолго отображаться как видео перед переходом в аудио режим
+
+Приостановка плавного перехода для просмотра музыкального видео может привести к тому, что некоторые видео будут черными (особенно те, у которых звук исходит из самого видео). Чтобы избежать этого, приостановите плавный переход перед выбором песни"</string>
+  <string name="morphe_music_crossfade_about_unsupported_title">Не работает вообще</string>
+  <string name="morphe_music_crossfade_about_unsupported_summary">"Трансляция или зеркалирование аудио (Chromecast, зеркалирование экрана или аудио) — плавный переход приостанавливается, поскольку это нестабильно и, возможно, никогда не будет исправлено.
+
+YouTube Music 8.x — плавный переход работает только в 9.x и более новых версиях"</string>
+  <string name="morphe_music_crossfade_about_credit_title">Источник</string>
+  <string name="morphe_music_crossfade_about_credit_summary">Функция плавного перехода от VazerOG</string>
   <!-- interaction.permanentrepeat.permanentRepeatPatch -->
   <string name="morphe_music_play_permanent_repeat_title">Включить постоянный повтор</string>
-  <!-- layout.buttons.hideButtons -->
+  <!-- layout.buttons.hideButtonsPatch -->
   <string name="morphe_music_hide_cast_button_title">Скрыть кнопку \"Трансляция\"</string>
   <string name="morphe_music_hide_history_button_title">Скрыть кнопку \"История\"</string>
   <string name="morphe_music_hide_notification_button_title">Скрыть кнопку уведомлений</string>
@@ -92,17 +116,20 @@ Second \"item\" text"</string>
   <string name="morphe_change_start_page_entry_playlists">Плейлисты</string>
   <string name="morphe_change_start_page_entry_search">Поиск</string>
   <string name="morphe_change_start_page_entry_subscriptions">Подписки</string>
-  <!-- layout.compactheader.hideCategoryBar -->
+  <!-- layout.compactheader.hideCategoryBarPatch -->
   <string name="morphe_music_hide_category_bar_title">Скрыть панель категорий</string>
-  <!-- layout.miniplayer.changeMiniplayerColor -->
+  <!-- layout.miniplayer.changeMiniplayerColorPatch -->
   <string name="morphe_music_change_miniplayer_color_title">Изменить цвет мини-плеера</string>
   <string name="morphe_music_change_miniplayer_color_summary">Цвет мини-плеера соответствует полноэкранному проигрывателю</string>
-  <!-- layout.miniplayer.miniplayerNextPreviousButtons -->
+  <!-- layout.miniplayer.miniplayerNextPreviousButtonsPatch -->
   <string name="morphe_music_miniplayer_next_button_title">Показать кнопку \"Далее\" в мини плеере</string>
   <string name="morphe_music_miniplayer_previous_button_title">Показать предыдущую кнопку в мини плеере</string>
-  <!-- layout.miniplayer.enableForcedMiniplayer -->
+  <!-- layout.miniplayer.enableForcedMiniplayerPatch -->
   <string name="morphe_music_enable_forced_miniplayer_title">Включить принудительно мини плеер</string>
   <string name="morphe_music_enable_forced_miniplayer_summary">Предотвращает автоматическое разворачивание плеера на весь экран при запуске нового трека</string>
+  <!-- layout.miniplayer.enableSwipeToDismissMiniplayerPatch -->
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_title">Включить смахивание для закрытия мини-плеера</string>
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_summary">Позволяет закрыть мини-плеер, смахивая по нему вниз</string>
   <!-- layout.navigationbar.navigationBarPatch -->
   <string name="morphe_music_navigation_bar_screen_title">Панель навигации</string>
   <string name="morphe_music_navigation_bar_screen_summary">Выберите, какие кнопки должны отображаться на нижней навигационной панели</string>

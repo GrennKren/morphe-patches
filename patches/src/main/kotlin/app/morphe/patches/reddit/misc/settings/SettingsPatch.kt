@@ -26,13 +26,13 @@ import app.morphe.patches.reddit.misc.fix.signature.spoofSignaturePatch
 import app.morphe.patches.reddit.shared.Constants.COMPATIBILITY_REDDIT
 import app.morphe.patches.shared.misc.checks.experimentalAppNoticePatch
 import app.morphe.util.ResourceGroup
-import app.morphe.util.cloneMutableAndPreserveParameters
+import app.morphe.util.cloneParameters
 import app.morphe.util.copyResources
 import app.morphe.util.findFreeRegister
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 
-internal const val EXTENSION_CLASS =
+private const val EXTENSION_CLASS =
     "Lapp/morphe/extension/reddit/settings/RedditActivityHook;"
 
 val settingsPatch = bytecodePatch(
@@ -124,7 +124,7 @@ val settingsPatch = bytecodePatch(
                 )
             ).method
 
-            it.method.cloneMutableAndPreserveParameters().addInstructionsWithLabels(
+            it.method.cloneParameters().addInstructionsWithLabels(
                 0,
                 """
                     invoke-static/range { p1 .. p1 }, $EXTENSION_CLASS->isAcknowledgment(Ljava/lang/Enum;)Z

@@ -31,15 +31,17 @@ Second \"item\" text"</string>
   <!-- interaction.crossfade.crossfadePatch -->
   <!-- Empty string because custom preference handles the title itself -->
   <string name="morphe_music_crossfade_about_title">درباره</string>
+  <!-- Banner row has no text; it shows a full-width graphic via a custom layout. -->
   <!-- interaction.permanentrepeat.permanentRepeatPatch -->
   <string name="morphe_music_play_permanent_repeat_title">فعال سازی تکرار دائمی</string>
-  <!-- layout.buttons.hideButtons -->
+  <!-- layout.buttons.hideButtonsPatch -->
   <string name="morphe_music_hide_cast_button_title">دکمه مخفی کردن کست</string>
   <!-- layout.startpage.changeStartPagePatch -->
-  <!-- layout.compactheader.hideCategoryBar -->
-  <!-- layout.miniplayer.changeMiniplayerColor -->
-  <!-- layout.miniplayer.miniplayerNextPreviousButtons -->
-  <!-- layout.miniplayer.enableForcedMiniplayer -->
+  <!-- layout.compactheader.hideCategoryBarPatch -->
+  <!-- layout.miniplayer.changeMiniplayerColorPatch -->
+  <!-- layout.miniplayer.miniplayerNextPreviousButtonsPatch -->
+  <!-- layout.miniplayer.enableForcedMiniplayerPatch -->
+  <!-- layout.miniplayer.enableSwipeToDismissMiniplayerPatch -->
   <!-- layout.navigationbar.navigationBarPatch -->
   <!-- 'Home' should be translated using the same localized wording YouTube Music displays for the tab. -->
   <!-- 'Samples' should be translated using the same localized wording YouTube Music displays for the tab. -->

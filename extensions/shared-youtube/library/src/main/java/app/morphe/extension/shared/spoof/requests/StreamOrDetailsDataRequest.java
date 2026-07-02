@@ -13,7 +13,7 @@ package app.morphe.extension.shared.spoof.requests;
 import static app.morphe.extension.shared.StringRef.str;
 import static app.morphe.extension.shared.Utils.isNotEmpty;
 import static app.morphe.extension.shared.Utils.submitOnBackgroundThread;
-import static app.morphe.extension.shared.spoof.SpoofVideoStreamsPatch.pageIDHeaderValue;
+import static app.morphe.extension.shared.innertube.utils.AuthUtils.pageId;
 import static app.morphe.extension.shared.spoof.js.JavaScriptEngineSupport.supportsJavaScriptEngine;
 import static app.morphe.extension.shared.spoof.js.JavaScriptManager.getDeobfuscatedStreamingData;
 import static app.morphe.extension.shared.spoof.js.JavaScriptManager.getJavaScriptHash;
@@ -160,7 +160,8 @@ public class StreamOrDetailsDataRequest {
                                        String videoId, Map<String, String> playerHeaders) {
         this.videoId = videoId;
         // Strictly require playerHeaders only if endpoint is null (only for Stream fetching)
-        if (endpoint == null) {
+        // or equals to the one used by the Save Video To Watch Later button.
+        if (endpoint == null || endpoint == PlayerRoutes.SEND_SAVE_VIDEO_TO_WATCH_LATER) {
             Objects.requireNonNull(playerHeaders);
         }
         this.future = submitOnBackgroundThread(() -> fetch(endpoint, videoId, playerHeaders));
@@ -208,9 +209,9 @@ public class StreamOrDetailsDataRequest {
                                           boolean showErrorToasts) {
         Objects.requireNonNull(clientType);
         Objects.requireNonNull(videoId);
+        Utils.verifyOffMainThread();
 
         final boolean isStream = clientType.endpoint == GET_PLAYER_STREAMING_DATA || clientType.endpoint == GET_REEL_STREAMING_DATA;
-
         final long startTime = System.currentTimeMillis();
 
         try {
@@ -256,9 +257,9 @@ public class StreamOrDetailsDataRequest {
             }
 
             if (authHeadersIncludes) {
-                if (!pageIDHeaderValue.isEmpty()) {
-                    Logger.printDebug(() -> "Including PAGE_ID_HEADER header: " + pageIDHeaderValue);
-                    connection.setRequestProperty(PAGE_ID_HEADER, pageIDHeaderValue);
+                if (!pageId.isEmpty()) {
+                    Logger.printDebug(() -> "Including PAGE_ID_HEADER header: " + pageId);
+                    connection.setRequestProperty(PAGE_ID_HEADER, pageId);
                 }
             } else {
                 if (clientType.requireLogin) {

@@ -159,23 +159,6 @@ internal object NerdsStatsVideoFormatBuilderFingerprint : Fingerprint(
     )
 )
 
-val accountIdentityFingerprint = Fingerprint(
-    returnType = "V",
-    accessFlags = listOf(AccessFlags.PUBLIC, AccessFlags.CONSTRUCTOR),
-    strings = listOf(
-        "Null getId",
-        "Null getAccountName",
-        "Null getPageId",
-        "Null getDataSyncId",
-        "Null getGaiaDelegationType",
-        "Null getDelegationContext"
-    ),
-    custom = { method, _ ->
-        val parameterTypes = method.parameterTypes
-        parameterTypes.size > 4 && parameterTypes[2] == "Ljava/lang/String;" && parameterTypes[3] == "Z"
-    }
-)
-
 // Feature flag that turns on Platypus programming language code compiled to native C++.
 // This code appears to replace the player config after the streams are loaded.
 // Flag is present in YouTube 19.34, but is missing Platypus stream replacement code until 19.43.
@@ -229,6 +212,6 @@ internal fun indexOfNewUrlRequestBuilderInstruction(method: Method) = method.ind
             && reference.name == "newUrlRequestBuilder"
             && reference.parameterTypes.size == 3
             && reference.parameterTypes[0] == "Ljava/lang/String;"
-            && reference.parameterTypes[1] == "Lorg/chromium/net/UrlRequest\$Callback;"
+            && reference.parameterTypes[1] == $$"Lorg/chromium/net/UrlRequest$Callback;"
             && reference.parameterTypes[2] == "Ljava/util/concurrent/Executor;"
 }
