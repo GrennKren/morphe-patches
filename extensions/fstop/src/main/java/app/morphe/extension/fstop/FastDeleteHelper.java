@@ -30,38 +30,34 @@ import c3.t;
 /**
  * Helper class for the "Fast batch delete" patch in F-Stop.
  *
- * <h2>v8 — Fix: eliminate RB item overhead (restore parallel speed for RB)</h2>
+ * <h2>v9 — Restore v6 RB logic (N(false).b() confirmed instant by user)</h2>
  *
- * <h3>Root cause of v7 slowness for RB deletion</h3>
- * v7 RB branch used {@code tVar.N(false).b()} + {@code o8.d.f(xmpPath, ctx)}
- * wrapper allocation per file. For 100 RB files this means:
+ * <h3>Root cause of v8 RB slowness</h3>
+ * v8 tried to "optimize" RB deletion by using {@code p.D1(imageId)} + direct
+ * {@code File.delete()}, with {@code N(false).b()} as inline fallback when
+ * File.delete() fails. This was WRONG:
  * <ul>
- *   <li>100× {@code N(false)} dispatch (checks field U, lookup D1, allocates o8.e)</li>
- *   <li>100× {@code o8.d.f()} wrapper allocation for XMP sidecar</li>
- *   <li>100× {@code wrapper.c()} exists check (I/O syscall)</li>
- *   <li>100× {@code wrapper.b()} delete (dispatch through abstract method)</li>
+ *   <li>{@code File.delete()} on the {@code p.D1()} path frequently fails for
+ *       RB items (path permission / cache state), causing the inline fallback
+ *       {@code N(false).b()} to be invoked on every file — but with the extra
+ *       overhead of a failed File.delete() syscall before it.</li>
+ *   <li>User verified v6 RB deletion was INSTANT — v6 used
+ *       {@code N(false).b()} directly with no File.delete() pre-attempt.</li>
  * </ul>
- * Total ~400 operations with heavy per-file overhead, defeating the parallel
- * speed advantage that makes non-RB deletion instant.
  *
- * <h3>v8 fix — resolve RB path directly via p.D1(imageId)</h3>
- * For RB items, the real file path is {@code p.D1(tVar.i)} (recycle bin
- * directory path). Resolve this ONCE via direct static call, then use
- * {@code new File(realPath).delete()} for the actual delete (instant syscall,
- * no wrapper allocation). XMP sidecar deletion also uses direct
- * {@code new File(p.R1(realPath)).delete()} — skip o8.d.f() wrapper.
+ * <h3>v9 fix — revert RB branch to v6 logic verbatim</h3>
+ * RB branch now uses {@code tVar.N(false).b()} + XMP sidecar via
+ * {@code o8.d.f()} (exactly v6 logic). User confirmed this is instant.
  *
  * <h3>Branching strategy</h3>
  * <ul>
  *   <li><b>Non-RB items</b> ({@code File(tVar.j).exists() == true}):
- *       {@code File.delete()} directly. v5 fast path preserved.</li>
+ *       {@code File.delete()} directly (v5/v7 fast path — no wrapper).</li>
  *   <li><b>RB items</b> ({@code File(tVar.j).exists() == false}):
- *       Resolve {@code p.D1(imageId)} → {@code File.delete()} directly.
- *       XMP sidecar via {@code new File(p.R1(realPath)).delete()}.
- *       Both run in parallel thread pool — same speed as non-RB.</li>
- *   <li><b>SAF fallback</b>: if {@code File.delete()} fails (Android 11+
- *       without MANAGE_EXTERNAL_STORAGE), collect for sequential
- *       {@code db.w()} fallback which uses SAF correctly.</li>
+ *       {@code N(false).b()} + XMP sidecar via {@code o8.d.f()}
+ *       (v6 logic — verified instant by user).</li>
+ *   <li><b>SAF fallback</b>: if {@code N(false).b()} also fails, collect for
+ *       sequential {@code db.w()} fallback (handles SAF paths).</li>
  * </ul>
  *
  * <h3>Thread safety</h3>
@@ -142,9 +138,9 @@ public final class FastDeleteHelper {
                             boolean deleted;
 
                             if (fileExistsAtDbPath) {
-                                // ── Non-RB happy path (v5 restored) ──
+                                // ── Non-RB happy path (v5/v7 fast path) ──
                                 // File is at tVar.j — delete directly via File.delete().
-                                // No wrapper allocation, no XMP sidecar (matches v5).
+                                // No wrapper allocation, no XMP sidecar.
                                 realPath = tVar.j;
                                 deleted = fileAtDbPath.delete();
                                 if (!deleted) {
@@ -158,55 +154,49 @@ public final class FastDeleteHelper {
                                     return;
                                 }
                             } else {
-                                // ── RB item path (v8: direct File.delete, no wrapper) ──
+                                // ── RB item path (v6 logic — VERIFIED FAST) ──
                                 // File NOT at tVar.j (modified DB path) → recycle bin item.
-                                // Resolve real RB path via p.D1(imageId) directly,
-                                // then File.delete() — skip N(false) wrapper overhead.
-                                realPath = p.D1(tVar.i);
-                                if (realPath == null) {
-                                    // Cannot resolve RB path — fall back to w()
+                                // Use N(false).b() — this is the v6 logic that user confirmed
+                                // was INSTANT for RB deletion. N(false) returns o8.e wrapper
+                                // for D1(imageId) (the real RB path), and o8.e.b() = File.delete()
+                                // which is a direct syscall (instant).
+                                //
+                                // Do NOT use p.D1() + File.delete() directly (v8 attempt)
+                                // because File.delete() on D1 path can fail for RB items,
+                                // triggering slow fallback path. N(false).b() is the correct
+                                // stock-equivalent path that user verified as instant.
+                                Object Nobj = tVar.N(false);
+                                if (Nobj == null) {
                                     fileDeleteFailed.incrementAndGet();
                                     synchronized (failedLocalFiles) {
                                         failedLocalFiles.add(tVar);
                                     }
                                     return;
                                 }
-                                File rbFile = new File(realPath);
-                                deleted = rbFile.exists() && rbFile.delete();
+                                o8.d N = (o8.d) Nobj;
+                                realPath = N.d();  // actual RB path (p.D1(imageId))
+                                deleted = N.b();
+                                if (!deleted && !N.c()) {
+                                    // Delete failed but file doesn't exist at RB path either —
+                                    // consider it deleted (matches stock w(t) behavior).
+                                    deleted = true;
+                                }
                                 if (!deleted) {
-                                    // RB file delete failed — try N(false).b() as fallback
-                                    // (handles SAF paths where File.delete() doesn't work).
-                                    try {
-                                        Object Nobj = tVar.N(false);
-                                        if (Nobj != null) {
-                                            o8.d N = (o8.d) Nobj;
-                                            deleted = N.b();
-                                            if (!deleted && !N.c()) {
-                                                deleted = true;  // file doesn't exist
-                                            }
-                                        }
-                                    } catch (Exception e) {
-                                        Log.w(TAG, "RB N(false) fallback failed for " + tVar.j, e);
+                                    fileDeleteFailed.incrementAndGet();
+                                    synchronized (failedLocalFiles) {
+                                        failedLocalFiles.add(tVar);
                                     }
-                                    if (!deleted) {
-                                        fileDeleteFailed.incrementAndGet();
-                                        synchronized (failedLocalFiles) {
-                                            failedLocalFiles.add(tVar);
-                                        }
-                                        return;
-                                    }
+                                    return;
                                 }
 
                                 // XMP sidecar deletion ONLY for RB items (matches stock w(t)).
-                                // v8: direct File.delete() — skip o8.d.f() wrapper allocation.
+                                // Use o8.d.f() wrapper (v6 logic) — matches stock w(t) behavior.
                                 // Non-RB path skips this entirely (v5 behavior).
                                 try {
                                     String xmpPath = p.R1(realPath);
-                                    if (xmpPath != null) {
-                                        File xmpFile = new File(xmpPath);
-                                        if (xmpFile.exists()) {
-                                            xmpFile.delete();
-                                        }
+                                    o8.d xmpWrapper = o8.d.f(xmpPath, ctx);
+                                    if (xmpWrapper.c()) {
+                                        xmpWrapper.b();
                                     }
                                 } catch (Exception e) {
                                     // XMP deletion failure is not critical
