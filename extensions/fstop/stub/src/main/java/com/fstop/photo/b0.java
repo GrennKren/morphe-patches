@@ -31,5 +31,8 @@ public class b0 {
     /** prescanThumbnails preference (PUBLIC static). */
     public static boolean X2;
 
+    /** Recycle bin dirty flag (PUBLIC static). Set true when items are moved to recycle bin. */
+    public static boolean R4;
+
     public static int x() { return 0; }
 }

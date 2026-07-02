@@ -44,6 +44,15 @@ public class t {
     public boolean g1; // image loaded flag (real DEX name, public) — DO NOT MODIFY
     public int B0;     // selection session ID (real DEX name, public)
 
+    // ── Fast delete patch stubs ─────────────────────────────────────
+    /** Storage type: 0=local-with-MediaStore, 1=SMB, 2=other-remote, 3=cloud (real DEX name). */
+    public int Q;
+    /** Used by d3.i.b(R, S) for Q==2 cloud deletes (real DEX name). */
+    public String R;
+
+    /** Stock: returns the file wrapper (o8.d) for this item's path. */
+    public o8.d N(boolean z) { return null; }
+
     /**
      * Check if this item is selected.
      * Returns field 's' (boolean selected flag).
