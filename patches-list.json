@@ -5239,6 +5239,34 @@
       "options": []
     },
     {
+      "name": "License compatibility",
+      "description": "Makes the patched app still recognize the FX Plus License Key app, so your existing paid license keeps working. Use this if you own the FX Plus license key. If you don't own one, use the 'Unlock premium' patch instead.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Loop video",
       "description": "Adds an option to loop videos and display loop video button in the video player.",
       "default": true,
@@ -6543,13 +6571,9 @@
     },
     {
       "name": "Preserve filter on refresh",
-      "description": "Implements per-directory, per-tab filter persistence and scroll position preservation. When navigating into a subdirectory, the filter is cleared. When returning to the parent directory, the previous filter is restored. Filter state is isolated between tabs (in-memory only, cleared on restart). Scroll position is preserved when returning from viewing a file in an external app (requires the 'Open files externally' patch to be enabled). Also enables side-by-side installation.",
+      "description": "Implements per-directory, per-tab filter persistence and scroll position preservation. When navigating into a subdirectory, the filter is cleared. When returning to the parent directory, the previous filter is restored. Filter state is isolated between tabs (in-memory only, cleared on restart). Scroll position is preserved when returning from viewing a file in an external app (requires the 'Open files externally' patch to be enabled).",
       "default": true,
-      "dependencies": [
-        "ResourcePatch",
-        "ResourcePatch",
-        "BytecodePatch"
-      ],
+      "dependencies": [],
       "compatiblePackages": [
         {
           "packageName": "nextapp.fx",
@@ -7576,6 +7600,37 @@
       "options": []
     },
     {
+      "name": "Side-by-side installation",
+      "description": "Lets you install this patched version alongside the original FX Explorer from the Play Store, so both can coexist on the same device.",
+      "default": true,
+      "dependencies": [
+        "ResourcePatch",
+        "ResourcePatch"
+      ],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "SponsorBlock",
       "description": "Adds options to enable and configure SponsorBlock, which can skip undesired video segments such as sponsored content.",
       "default": true,
@@ -8429,6 +8484,34 @@
               "versionCodes": null,
               "isExperimental": false,
               "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Unlock premium",
+      "description": "Unlocks all premium features without needing the FX Plus License Key app.",
+      "default": false,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 26,
               "description": null
             }
           ]

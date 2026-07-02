@@ -5,18 +5,11 @@
 package app.morphe.patches.fxexplorer.interaction.filter
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
-import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
-import app.morphe.patcher.extensions.InstructionExtensions.getInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
-import app.morphe.patcher.patch.resourcePatch
-import app.morphe.patches.all.misc.packagename.changePackageNamePatch
-import app.morphe.patches.all.misc.packagename.setOrGetFallbackPackageName
 import app.morphe.patches.fxexplorer.shared.Constants.COMPATIBILITY_FX_EXPLORER
-import app.morphe.patches.fxexplorer.shared.Constants.ORIGINAL_SIGNATURE_HEX
 import com.android.tools.smali.dexlib2.Opcode
-import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 
 private const val EXTENSION_CLASS =
@@ -94,11 +87,8 @@ private const val EXTENSION_CLASS =
  *    even when the user explicitly taps the Filter button.
  * 6. Restore SOFT_INPUT_STATE_HIDDEN (0x2) — original window soft input mode.
  *
- * Additionally, this patch:
- * - Changes the package name (default: nextapp.fx.morphe) so the patched app
- *   can be installed alongside the original.
- * - Spoofs the original signing certificate during license verification so the
- *   FX Plus License Key app (nextapp.fx.rk) is still recognized.
+ * NOTE: Side-by-side installation and license compatibility are now separate
+ * patches. Enable them independently as needed.
  */
 @Suppress("unused")
 val preserveFilterPatch = bytecodePatch(
@@ -108,91 +98,11 @@ val preserveFilterPatch = bytecodePatch(
         "When returning to the parent directory, the previous filter is restored. " +
         "Filter state is isolated between tabs (in-memory only, cleared on restart). " +
         "Scroll position is preserved when returning from viewing a file in an external app " +
-        "(requires the 'Open files externally' patch to be enabled). " +
-        "Also enables side-by-side installation.",
+        "(requires the 'Open files externally' patch to be enabled).",
 ) {
     compatibleWith(COMPATIBILITY_FX_EXPLORER)
 
-    dependsOn(changePackageNamePatch)
-
     extendWith("extensions/fxexplorer.mpe")
-
-    // Inline resource patch that changes the package name and updates all manifest
-    // references so the patched app can be installed alongside the original.
-    dependsOn(
-        resourcePatch {
-            execute {
-                val fromPackage = "nextapp.fx"
-                val toPackage = setOrGetFallbackPackageName("$fromPackage.morphe")
-
-                val transformations = mapOf(
-                    "package=\"$fromPackage\"" to "package=\"$toPackage\"",
-                    "android:sharedUserId=\"$fromPackage\"" to "",
-                    "android:authorities=\"$fromPackage." to "android:authorities=\"$toPackage.",
-                    "$fromPackage.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" to
-                        "$toPackage.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
-                    "android:name=\"$fromPackage.intent." to "android:name=\"$toPackage.intent.",
-                    "android:scheme=\"$fromPackage\"" to "android:scheme=\"$toPackage\"",
-                    "android:taskAffinity=\"$fromPackage." to "android:taskAffinity=\"$toPackage.",
-                )
-
-                val manifest = get("AndroidManifest.xml")
-                manifest.writeText(
-                    transformations.entries.fold(manifest.readText()) { acc, (from, to) ->
-                        acc.replace(from, to)
-                    },
-                )
-            }
-        }
-    )
-
-    // Inline bytecode patch that spoofs the original signing certificate during
-    // the FX Plus License Key verification.
-    dependsOn(
-        bytecodePatch {
-            execute {
-                LicenseCheckFingerprint.method.apply {
-                    var getPackageInfoCount = 0
-                    val selfPkgInfoIndex = implementation!!.instructions.indexOfFirst {
-                        if (it.opcode == Opcode.INVOKE_VIRTUAL &&
-                            it is ReferenceInstruction &&
-                            it.reference.toString().contains("PackageManager;->getPackageInfo")
-                        ) {
-                            getPackageInfoCount++
-                            getPackageInfoCount == 2
-                        } else {
-                            false
-                        }
-                    }
-
-                    if (selfPkgInfoIndex == -1) {
-                        throw PatchException(
-                            "Could not find the self getPackageInfo call in license check method. " +
-                                "The APK version may not be supported."
-                        )
-                    }
-
-                    val moveResultIndex = selfPkgInfoIndex + 1
-                    val moveResultInstruction = getInstruction<OneRegisterInstruction>(moveResultIndex)
-                    val pkgInfoRegister = moveResultInstruction.registerA
-
-                    addInstructions(
-                        moveResultIndex + 1,
-                        """
-                            new-instance v2, Landroid/content/pm/Signature;
-                            const-string v3, "$ORIGINAL_SIGNATURE_HEX"
-                            invoke-direct {v2, v3}, Landroid/content/pm/Signature;-><init>(Ljava/lang/String;)V
-                            const/4 v3, 0x1
-                            new-array v3, v3, [Landroid/content/pm/Signature;
-                            const/4 v4, 0x0
-                            aput-object v2, v3, v4
-                            iput-object v3, v$pkgInfoRegister, Landroid/content/pm/PackageInfo;->signatures:[Landroid/content/pm/Signature;
-                        """
-                    )
-                }
-            }
-        }
-    )
 
     // Main bytecode patch: per-directory, per-tab filter persistence
     execute {
