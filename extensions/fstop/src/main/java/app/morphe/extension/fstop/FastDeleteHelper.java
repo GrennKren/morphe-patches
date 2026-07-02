@@ -30,89 +30,51 @@ import c3.t;
 /**
  * Helper class for the "Fast batch delete" patch in F-Stop.
  *
- * <h2>v5 — Correctness fix: proper S/Q field handling + SAF fallback</h2>
+ * <h2>v6 — Fix: correct path resolution for Recycle Bin items</h2>
  *
- * <h3>Root cause of v4 incompatibility</h3>
- * v4 checked only the Q field to determine storage type. But F-Stop uses
- * TWO fields together:
+ * <h3>Root cause of v5 slowness for Recycle Bin deletion</h3>
+ * When a file is moved to the Recycle Bin, stock code (via G2()) modifies
+ * the DB FullPath to {@code original_path + "_" + imageId}. The actual
+ * file is physically at {@code p.D1(imageId)} (the recycle bin directory).
+ *
+ * <p>Stock {@code w(t)} handles this correctly by calling {@code tVar.N(false)}
+ * which checks field {@code U} (non-zero for recycle bin items) and returns
+ * an {@code o8.e} wrapper for the REAL recycle bin path via {@code p.D1(i)}.</p>
+ *
+ * <p>v5 bypassed {@code w(t)} and used {@code new File(tVar.j).delete()}
+ * directly. For recycle bin items, {@code tVar.j} is the MODIFIED DB path
+ * (original + "_" + ID), not the actual file path. So {@code File.delete()}
+ * silently failed (file not found at modified path), and v5 set
+ * {@code deleted = true} without actually deleting the physical file.</p>
+ *
+ * <h3>v6 fix</h3>
+ * Use {@code tVar.N(false)} to get the correct file wrapper, then call
+ * {@code wrapper.b()} to delete. This matches stock {@code w(t)} behavior:
  * <ul>
- *   <li><b>S</b> (DataSourceType): 0 = local filesystem, >0 = cloud source ID</li>
- *   <li><b>Q</b> (StorageType): 0 = local-with-MediaStore, 1 = SMB, 2 = other-remote, 3 = cloud-via-e2.c</li>
+ *   <li>For recycle bin items (U != 0): N() returns o8.e for D1(imageId)
+ *       → File.delete() on recycle bin path → correct</li>
+ *   <li>For normal local files: N() returns o8.e for original path
+ *       → File.delete() → correct</li>
+ *   <li>For SAF paths (no MANAGE_EXTERNAL_STORAGE): N() returns o8.g
+ *       → DocumentsContract.deleteDocument() → correct (SAF)</li>
  * </ul>
  *
- * The combination matters:
- * <table>
- *   <tr><th>S</th><th>Q</th><th>Meaning</th><th>Stock w() uses</th></tr>
- *   <tr><td>≤0</td><td>0</td><td>Local file</td><td>o8.d → File.delete() or SAF</td></tr>
- *   <tr><td>≤0</td><td>1/2</td><td>Local mount of SMB/remote</td><td>o8.d → File.delete() or SAF</td></tr>
- *   <tr><td>&gt;0</td><td>1</td><td>SMB cloud source</td><td>d3.h.b(path, S) — SMB protocol</td></tr>
- *   <tr><td>&gt;0</td><td>2</td><td>Other remote cloud</td><td>d3.i.b(R, S) — remote API</td></tr>
- *   <tr><td>any</td><td>3</td><td>Cloud via e2.c (GDrive, Dropbox)</td><td>p.U1() + e2.c.m() (NOT w())</td></tr>
- * </table>
+ * Also replicate w(t)'s XMP sidecar file deletion: after deleting the
+ * main file, delete the .xmp sidecar if it exists.
  *
- * <p>v4 tried File.delete() for Q==1/Q==2 without checking S. For SMB cloud
- * sources (S>0, Q==1), tVar.j is "smb://server/share/file.jpg" —
- * new File("smb://...").exists() returns false, so v4 set deleted=true
- * without actually deleting the SMB file. <b>DB entry was removed but the
- * file on the SMB server remained.</b></p>
- *
- * <h3>v5 fix strategy</h3>
- * <ol>
- *   <li><b>Partition by Q first</b>: Q==3 → cloud e2.c (sequential), Q!=3 → w() path</li>
- *   <li><b>Within Q!=3, partition by S</b>:
- *     <ul>
- *       <li>S≤0: local file → try File.delete() in parallel (2 threads).
- *           If File.delete() fails (SAF-only paths on Android 11+ without
- *           MANAGE_EXTERNAL_STORAGE), fall back to db.w() sequentially —
- *           w() will use DocumentsContract.deleteDocument() (SAF) which
- *           correctly deletes the physical file.</li>
- *       <li>S&gt;0: cloud source (SMB/remote) → db.w() sequentially.
- *           Cannot use File.delete() because path is protocol-based
- *           (smb://, pcloud://, etc.). w() dispatches to d3.h.b() or
- *           d3.i.b() which use the correct cloud protocol.</li>
- *     </ul>
- *   </li>
- *   <li><b>Thread safety</b>: synchronize b0.Z access in parallel phase.
- *       Stock code accesses b0.Z unsynchronized, but stock is sequential.
- *       Our parallel phase needs sync; sequential fallback phase is safe
- *       because it runs after parallel phase completes.</li>
- *   <li><b>SAF fallback correctness</b>: for files where File.delete() fails,
- *       we call db.w() which internally calls N(false).b(). N(false) returns
- *       o8.g (SAF wrapper) on Android 11+ without MANAGE_EXTERNAL_STORAGE.
- *       o8.g.b() calls DocumentsContract.deleteDocument() which correctly
- *       deletes the physical file via SAF. This matches stock behavior
- *       exactly — no regression.</li>
- * </ol>
- *
- * <h3>Compatibility matrix (v5)</h3>
- * <table>
- *   <tr><th>Scenario</th><th>v4</th><th>v5</th></tr>
- *   <tr><td>Local + MANAGE_EXTERNAL_STORAGE</td><td>✅ Fast</td><td>✅ Fast (same)</td></tr>
- *   <tr><td>Local without MANAGE_EXTERNAL_STORAGE (Android 11+)</td><td>⚠️ File tertinggal</td><td>✅ SAF fallback via w()</td></tr>
- *   <tr><td>Old Android (API 24-28)</td><td>⚠️ File tertinggal</td><td>✅ File.delete() works (no scoped storage)</td></tr>
- *   <tr><td>SMB cloud source (S>0, Q==1)</td><td>❌ File NOT deleted</td><td>✅ w() → d3.h.b() (SMB protocol)</td></tr>
- *   <tr><td>Other remote (S>0, Q==2)</td><td>❌ File NOT deleted</td><td>✅ w() → d3.i.b() (remote API)</td></tr>
- *   <tr><td>Cloud via e2.c (Q==3)</td><td>✅ Works</td><td>✅ Works (same)</td></tr>
- *   <tr><td>Recycle Bin move (local)</td><td>✅ Fast</td><td>✅ Fast (same)</td></tr>
- *   <tr><td>Recycle Bin move (cloud source)</td><td>⚠️ renameTo fails</td><td>✅ o8.a.m() fallback</td></tr>
- * </table>
+ * <h3>Thread safety</h3>
+ * b0.Z (HashSet) is accessed by w(t) unsynchronized in stock code.
+ * Since stock is sequential, this is safe. Our parallel phase synchronizes
+ * b0.Z access to prevent race conditions.
  */
 @SuppressWarnings("unused")
 public final class FastDeleteHelper {
 
     private static final String TAG = "FastDelete";
-
-    /** Thread pool size for parallel file deletion (optimal per research). */
     private static final int DELETE_THREAD_COUNT = 2;
-
-    /** Progress broadcast interval (each call = 1 broadcast IPC). */
     private static final int PROGRESS_INTERVAL = 25;
 
     private FastDeleteHelper() {}
-
-    // ═══════════════════════════════════════════════════════════════
-    // fastDelete — replacement for e3.b.x(ArrayList)
-    // ═══════════════════════════════════════════════════════════════
 
     public static boolean fastDelete(b db, ArrayList items) {
         if (items == null || items.isEmpty()) {
@@ -131,10 +93,7 @@ public final class FastDeleteHelper {
 
             final int size = items.size();
 
-            // ── Partition items by storage type ──
-            // Group A: Q==3 → cloud via e2.c (sequential, network I/O)
-            // Group B: S>0, Q!=3 → SMB/remote cloud source (sequential, w())
-            // Group C: S<=0, Q!=3 → local file (parallel File.delete() + w() fallback)
+            // Partition by storage type
             final ArrayList<t> cloudE2Files = new ArrayList<>();    // Q==3
             final ArrayList<t> cloudSourceFiles = new ArrayList<>(); // S>0, Q!=3
             final ArrayList<t> localFiles = new ArrayList<>();       // S<=0, Q!=3
@@ -158,12 +117,13 @@ public final class FastDeleteHelper {
             final AtomicInteger fileDeleteSuccess = new AtomicInteger(0);
             final AtomicInteger fileDeleteFailed = new AtomicInteger(0);
 
-            // ── Group C: Parallel File.delete() for local files ──
+            // ── Group C: Parallel delete for local files (includes Recycle Bin items) ──
+            // Use N(false).b() to get the CORRECT file path (recycle bin path for RB items).
             if (!localFiles.isEmpty()) {
                 final int localSize = localFiles.size();
                 final ExecutorService executor = Executors.newFixedThreadPool(
                     Math.min(DELETE_THREAD_COUNT, localSize));
-                final ArrayList<t> failedLocalFiles = new ArrayList<>(); // need w() fallback
+                final ArrayList<t> failedLocalFiles = new ArrayList<>();
                 final ArrayList<Throwable> errors = new ArrayList<>();
 
                 for (int i = 0; i < localSize; i++) {
@@ -172,42 +132,71 @@ public final class FastDeleteHelper {
 
                     executor.execute(() -> {
                         try {
-                            String path = tVar.j;
-                            File file = new File(path);
+                            // Get the CORRECT file wrapper via N(false).
+                            // For recycle bin items (U!=0), this returns o8.e for D1(imageId).
+                            // For normal files, this returns o8.e for the original path.
+                            // For SAF paths, this returns o8.g (SAF wrapper).
+                            Object Nobj = tVar.N(false);
+                            if (Nobj == null) {
+                                fileDeleteFailed.incrementAndGet();
+                                synchronized (failedLocalFiles) {
+                                    failedLocalFiles.add(tVar);
+                                }
+                                return;
+                            }
 
-                            String parent = file.getParent();
+                            o8.d N = (o8.d) Nobj;
+                            String realPath = N.d();  // actual file path
+
+                            // Folder cache invalidation
+                            String parent = new File(realPath).getParent();
                             if (parent != null) {
                                 synchronized (parentDirsToInvalidate) {
                                     parentDirsToInvalidate.add(parent);
                                 }
                             }
 
-                            boolean deleted;
-                            if (file.exists()) {
-                                deleted = file.delete();
-                            } else {
-                                // File doesn't exist — consider it deleted.
-                                // Stock w() does the same: if !b() && !c(), set b10=true.
+                            // Delete the file via wrapper.b()
+                            // o8.e.b() = File.delete() (fast)
+                            // o8.g.b() = DocumentsContract.deleteDocument() (SAF, correct)
+                            boolean deleted = N.b();
+                            if (!deleted && !N.c()) {
+                                // Delete failed but file doesn't exist — consider it deleted.
+                                // This matches stock w(t) behavior.
                                 deleted = true;
                             }
 
                             if (deleted) {
                                 fileDeleteSuccess.incrementAndGet();
+
+                                // Track deleted path (synchronized — b0.Z is HashSet)
                                 if (b0.Z != null) {
                                     synchronized (b0.Z) {
-                                        b0.Z.add(path);
+                                        b0.Z.add(tVar.j);
                                     }
                                 }
+
+                                // Delete XMP sidecar file (stock w(t) does this)
+                                try {
+                                    String xmpPath = p.R1(realPath);
+                                    o8.d xmpWrapper = o8.d.f(xmpPath, ctx);
+                                    if (xmpWrapper.c()) {
+                                        xmpWrapper.b();
+                                    }
+                                } catch (Exception e) {
+                                    // XMP deletion failure is not critical
+                                }
+
                                 synchronized (deletedItems) {
                                     deletedItems.add(tVar);
                                 }
-                                synchronized (pathsForMediaStoreCleanup) {
-                                    pathsForMediaStoreCleanup.add(path);
+                                // MediaStore cleanup only for Q==0 (local with MediaStore entry)
+                                if (tVar.Q == 0) {
+                                    synchronized (pathsForMediaStoreCleanup) {
+                                        pathsForMediaStoreCleanup.add(tVar.j);
+                                    }
                                 }
                             } else {
-                                // File.delete() failed — likely SAF-only path
-                                // (Android 11+ without MANAGE_EXTERNAL_STORAGE).
-                                // Collect for sequential w() fallback.
                                 fileDeleteFailed.incrementAndGet();
                                 synchronized (failedLocalFiles) {
                                     failedLocalFiles.add(tVar);
@@ -241,24 +230,21 @@ public final class FastDeleteHelper {
                     }
                 }
 
-                // ── Sequential w() fallback for failed local files ──
-                // w() will use N(false).b() which dispatches to o8.g (SAF)
-                // on Android 11+ without MANAGE_EXTERNAL_STORAGE.
-                // SAF correctly deletes the physical file.
+                // Sequential w() fallback for failed files
                 if (!failedLocalFiles.isEmpty()) {
                     Log.i(TAG, "Falling back to w() for " + failedLocalFiles.size() +
-                        " local files (File.delete() failed)");
+                        " local files");
                     for (t tVar : failedLocalFiles) {
                         try {
                             if (db.w(tVar)) {
                                 synchronized (deletedItems) {
                                     deletedItems.add(tVar);
                                 }
-                                synchronized (pathsForMediaStoreCleanup) {
-                                    pathsForMediaStoreCleanup.add(tVar.j);
+                                if (tVar.Q == 0) {
+                                    synchronized (pathsForMediaStoreCleanup) {
+                                        pathsForMediaStoreCleanup.add(tVar.j);
+                                    }
                                 }
-                            } else {
-                                Log.w(TAG, "w() also failed for: " + tVar.j);
                             }
                         } catch (Exception e) {
                             Log.w(TAG, "w() fallback error for " + tVar.j, e);
@@ -268,24 +254,16 @@ public final class FastDeleteHelper {
             }
 
             // ── Group B: Sequential w() for SMB/remote cloud sources ──
-            // These need d3.h.b() (SMB) or d3.i.b() (remote) — cannot use
-            // File.delete() because paths are protocol-based (smb://, etc.)
             if (!cloudSourceFiles.isEmpty()) {
-                Log.i(TAG, "Processing " + cloudSourceFiles.size() +
-                    " cloud source files sequentially (SMB/remote)");
                 for (int i = 0; i < cloudSourceFiles.size(); i++) {
                     t tVar = cloudSourceFiles.get(i);
                     try {
-                        // Folder cache invalidation (stock does this before w())
                         String parent = new File(tVar.j).getParent();
                         if (parent != null) {
                             parentDirsToInvalidate.add(parent);
                         }
                         if (db.w(tVar)) {
                             deletedItems.add(tVar);
-                            // No MediaStore cleanup for cloud sources (Q!=0)
-                        } else {
-                            Log.w(TAG, "w() failed for cloud source: " + tVar.j);
                         }
                     } catch (Exception e) {
                         Log.w(TAG, "Cloud source delete error for " + tVar.j, e);
@@ -296,8 +274,6 @@ public final class FastDeleteHelper {
 
             // ── Group A: Sequential cloud e2.c handling (Q==3) ──
             if (!cloudE2Files.isEmpty()) {
-                Log.i(TAG, "Processing " + cloudE2Files.size() +
-                    " cloud e2.c files sequentially");
                 for (int i = 0; i < cloudE2Files.size(); i++) {
                     t tVar = cloudE2Files.get(i);
                     try {
@@ -317,10 +293,10 @@ public final class FastDeleteHelper {
             Log.i(TAG, "fastDelete: " + size + " items (local=" + localFiles.size() +
                 ", cloudSource=" + cloudSourceFiles.size() +
                 ", cloudE2=" + cloudE2Files.size() +
-                "), File.delete OK=" + fileDeleteSuccess.get() +
+                "), delete OK=" + fileDeleteSuccess.get() +
                 " failed=" + fileDeleteFailed.get());
 
-            // ── Batched folder cover cache invalidation ──
+            // Batched folder cover cache invalidation
             for (String parent : parentDirsToInvalidate) {
                 try {
                     b0.H.c(parent);
@@ -329,20 +305,16 @@ public final class FastDeleteHelper {
                 }
             }
 
-            // ── BATCHED MediaStore cleanup ──
-            // Only for local file paths (Q==0). Cloud source paths are not in MediaStore.
+            // Batched MediaStore cleanup
             if (!pathsForMediaStoreCleanup.isEmpty()) {
                 batchedMediaStoreDelete(cr, pathsForMediaStoreCleanup);
             }
 
-            // ── F-Stop DB cleanup (already batched) ──
+            // DB cleanup (batched)
             db.U2(deletedItems);
             db.Y2(items);
 
-            // ── MediaScanner (conditional) ──
-            // Skip if all File.delete() succeeded AND no cloud fallback needed.
-            // Only call MediaScanner if there were failures (SAF paths that
-            // need MediaStore refresh).
+            // MediaScanner (conditional)
             if (fileDeleteFailed.get() > 0 && !deletedItems.isEmpty()) {
                 String[] paths = new String[deletedItems.size()];
                 for (int i = 0; i < deletedItems.size(); i++) {
@@ -362,10 +334,6 @@ public final class FastDeleteHelper {
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // fastMoveToRecycleBin — replacement for e3.b.J2(ArrayList)
-    // ═══════════════════════════════════════════════════════════════
-
     public static boolean fastMoveToRecycleBin(b db, ArrayList items) {
         if (items == null || items.isEmpty()) {
             return true;
@@ -382,10 +350,6 @@ public final class FastDeleteHelper {
             final ContentResolver cr = ctx.getContentResolver();
 
             final int size = items.size();
-
-            // ── Partition: local (S<=0, Q!=3) vs cloud (S>0 or Q==3) ──
-            // Cloud sources cannot use File.renameTo() — must use o8.a.m()
-            // which dispatches to the correct cloud protocol.
             final ArrayList<t> localFiles = new ArrayList<>();
             final ArrayList<t> cloudFiles = new ArrayList<>();
 
@@ -408,7 +372,6 @@ public final class FastDeleteHelper {
             final AtomicInteger renameSuccess = new AtomicInteger(0);
             final AtomicInteger renameFailed = new AtomicInteger(0);
 
-            // ── Parallel File.renameTo() for local files ──
             if (!localFiles.isEmpty()) {
                 final int localSize = localFiles.size();
                 final ExecutorService executor = Executors.newFixedThreadPool(
@@ -453,12 +416,9 @@ public final class FastDeleteHelper {
                                 }
                             }
 
-                            // Try File.renameTo() first (instant for same-filesystem)
                             boolean moved = srcFile.renameTo(destFile);
 
                             if (!moved) {
-                                // renameTo failed — likely cross-filesystem.
-                                // Fall back to o8.a.m() which handles copy+delete.
                                 synchronized (failedLocalFiles) {
                                     failedLocalFiles.add(tVar);
                                 }
@@ -506,10 +466,9 @@ public final class FastDeleteHelper {
                     }
                 }
 
-                // ── Sequential o8.a.m() fallback for failed local files ──
                 if (!failedLocalFiles.isEmpty()) {
                     Log.i(TAG, "Falling back to o8.a.m() for " + failedLocalFiles.size() +
-                        " local files (renameTo failed)");
+                        " local files");
                     for (t tVar : failedLocalFiles) {
                         try {
                             String destPath = p.D1(tVar.i);
@@ -526,8 +485,6 @@ public final class FastDeleteHelper {
                                     movedItems.add(tVar);
                                     b0.R4 = true;
                                     renameSuccess.incrementAndGet();
-                                } else {
-                                    Log.w(TAG, "o8.a.m() also failed for: " + tVar.j);
                                 }
                             }
                         } catch (Exception e) {
@@ -537,10 +494,7 @@ public final class FastDeleteHelper {
                 }
             }
 
-            // ── Sequential o8.a.m() for cloud source files ──
             if (!cloudFiles.isEmpty()) {
-                Log.i(TAG, "Processing " + cloudFiles.size() +
-                    " cloud files sequentially (cannot renameTo)");
                 for (int i = 0; i < cloudFiles.size(); i++) {
                     t tVar = cloudFiles.get(i);
                     try {
@@ -557,8 +511,6 @@ public final class FastDeleteHelper {
                             idsForG2Batch.add(tVar.i);
                             movedItems.add(tVar);
                             b0.R4 = true;
-                        } else {
-                            Log.w(TAG, "Cloud move failed for: " + tVar.j);
                         }
                     } catch (Exception e) {
                         Log.w(TAG, "Cloud move error for " + tVar.j, e);
@@ -572,7 +524,6 @@ public final class FastDeleteHelper {
                 "), rename OK=" + renameSuccess.get() +
                 " failed=" + renameFailed.get());
 
-            // Batched folder cover cache invalidation
             for (String parent : parentDirsToInvalidate) {
                 try {
                     b0.H.c(parent);
@@ -581,17 +532,14 @@ public final class FastDeleteHelper {
                 }
             }
 
-            // Batched MediaStore cleanup
             if (!pathsForMediaStoreCleanup.isEmpty()) {
                 batchedMediaStoreDelete(cr, pathsForMediaStoreCleanup);
             }
 
-            // Batched G2 SQL UPDATE
             if (!idsForG2Batch.isEmpty()) {
                 batchedG2Update(db, idsForG2Batch);
             }
 
-            // DB cleanup (batched)
             db.U2(notExistsItems);
             db.Y2(items);
             db.L2(movedItems);
@@ -603,10 +551,6 @@ public final class FastDeleteHelper {
             return false;
         }
     }
-
-    // ═══════════════════════════════════════════════════════════════
-    // Private helpers
-    // ═══════════════════════════════════════════════════════════════
 
     private static void batchedMediaStoreDelete(ContentResolver cr, ArrayList<String> paths) {
         if (paths.isEmpty()) return;
