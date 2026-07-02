@@ -9,8 +9,6 @@ import android.content.Context;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
-import android.os.Environment;
-import android.os.Process;
 import android.provider.MediaStore;
 import android.util.Log;
 
@@ -32,83 +30,90 @@ import c3.t;
 /**
  * Helper class for the "Fast batch delete" patch in F-Stop.
  *
- * <h2>v4 — Parallel deletion + skip non-critical steps</h2>
+ * <h2>v5 — Correctness fix: proper S/Q field handling + SAF fallback</h2>
  *
- * <h3>Research findings (informed v4 design)</h3>
+ * <h3>Root cause of v4 incompatibility</h3>
+ * v4 checked only the Q field to determine storage type. But F-Stop uses
+ * TWO fields together:
  * <ul>
- *   <li><b>Stack Overflow (Q31187616)</b>: Multi-threaded file deletion is ~2x
- *       faster for 1000-60000 files. Optimal at 2 threads; 3+ threads give
- *       diminishing returns (filesystem contention).</li>
- *   <li><b>ext4 journaling</b>: Each File.delete() triggers a journal write
- *       that cannot be avoided at syscall level. Parallelizing helps because
- *       the kernel can coalesce journal commits across threads.</li>
- *   <li><b>MediaScannerConnection.scanFile()</b>: One broadcast IPC per call.
- *       Skip entirely if MANAGE_EXTERNAL_STORAGE granted — MediaStore
- *       auto-updates when ContentResolver.delete() touches its rows.</li>
- *   <li><b>ContentProviderOperation.applyBatch()</b>: Single transaction for
- *       multiple deletes. But MediaStore already supports SQL WHERE IN clause
- *       (used in v1+), which is equally efficient for MediaProvider.</li>
- *   <li><b>Android 11+ createDeleteRequest</b>: Single system dialog for
- *       batch delete, but requires user confirmation — not suitable for
- *       background LongTaskService.</li>
+ *   <li><b>S</b> (DataSourceType): 0 = local filesystem, >0 = cloud source ID</li>
+ *   <li><b>Q</b> (StorageType): 0 = local-with-MediaStore, 1 = SMB, 2 = other-remote, 3 = cloud-via-e2.c</li>
  * </ul>
  *
- * <h3>v4 optimizations</h3>
+ * The combination matters:
+ * <table>
+ *   <tr><th>S</th><th>Q</th><th>Meaning</th><th>Stock w() uses</th></tr>
+ *   <tr><td>≤0</td><td>0</td><td>Local file</td><td>o8.d → File.delete() or SAF</td></tr>
+ *   <tr><td>≤0</td><td>1/2</td><td>Local mount of SMB/remote</td><td>o8.d → File.delete() or SAF</td></tr>
+ *   <tr><td>&gt;0</td><td>1</td><td>SMB cloud source</td><td>d3.h.b(path, S) — SMB protocol</td></tr>
+ *   <tr><td>&gt;0</td><td>2</td><td>Other remote cloud</td><td>d3.i.b(R, S) — remote API</td></tr>
+ *   <tr><td>any</td><td>3</td><td>Cloud via e2.c (GDrive, Dropbox)</td><td>p.U1() + e2.c.m() (NOT w())</td></tr>
+ * </table>
+ *
+ * <p>v4 tried File.delete() for Q==1/Q==2 without checking S. For SMB cloud
+ * sources (S>0, Q==1), tVar.j is "smb://server/share/file.jpg" —
+ * new File("smb://...").exists() returns false, so v4 set deleted=true
+ * without actually deleting the SMB file. <b>DB entry was removed but the
+ * file on the SMB server remained.</b></p>
+ *
+ * <h3>v5 fix strategy</h3>
  * <ol>
- *   <li><b>Parallel File.delete()</b> using fixed thread pool (2 threads).
- *       Research shows 2 threads is optimal for filesystem throughput;
- *       more causes contention. For 500 files this halves wall time.</li>
- *   <li><b>Skip MediaScannerConnection</b> if MANAGE_EXTERNAL_STORAGE granted.
- *       The batched MediaStore delete already updates MediaStore state;
- *       MediaScanner is redundant in this case. Fallback: still call it
- *       if permission not granted (SAF paths need it).</li>
- *   <li><b>Reduce progress broadcasts</b>: every 25 items (was 5 in v3).
- *       Each p.X3() is a broadcast IPC — 20 broadcasts for 500 files is
- *       acceptable UX vs 100 broadcasts at every-5.</li>
- *   <li><b>Batch folder cover cache invalidation</b>: collect unique parent
- *       paths, invalidate once at end. Stock code calls b0.H.c(parent)
- *       per file; for 500 files in 1 folder that's 500 HashSet lookups
- *       on the same string.</li>
- *   <li><b>AtomicInteger</b> for thread-safe progress counter.</li>
+ *   <li><b>Partition by Q first</b>: Q==3 → cloud e2.c (sequential), Q!=3 → w() path</li>
+ *   <li><b>Within Q!=3, partition by S</b>:
+ *     <ul>
+ *       <li>S≤0: local file → try File.delete() in parallel (2 threads).
+ *           If File.delete() fails (SAF-only paths on Android 11+ without
+ *           MANAGE_EXTERNAL_STORAGE), fall back to db.w() sequentially —
+ *           w() will use DocumentsContract.deleteDocument() (SAF) which
+ *           correctly deletes the physical file.</li>
+ *       <li>S&gt;0: cloud source (SMB/remote) → db.w() sequentially.
+ *           Cannot use File.delete() because path is protocol-based
+ *           (smb://, pcloud://, etc.). w() dispatches to d3.h.b() or
+ *           d3.i.b() which use the correct cloud protocol.</li>
+ *     </ul>
+ *   </li>
+ *   <li><b>Thread safety</b>: synchronize b0.Z access in parallel phase.
+ *       Stock code accesses b0.Z unsynchronized, but stock is sequential.
+ *       Our parallel phase needs sync; sequential fallback phase is safe
+ *       because it runs after parallel phase completes.</li>
+ *   <li><b>SAF fallback correctness</b>: for files where File.delete() fails,
+ *       we call db.w() which internally calls N(false).b(). N(false) returns
+ *       o8.g (SAF wrapper) on Android 11+ without MANAGE_EXTERNAL_STORAGE.
+ *       o8.g.b() calls DocumentsContract.deleteDocument() which correctly
+ *       deletes the physical file via SAF. This matches stock behavior
+ *       exactly — no regression.</li>
  * </ol>
  *
- * <h3>v4 vs v3 performance estimate (500 files)</h3>
- * <pre>
- *   v3: 500 × File.delete() sequential @ ~5ms each = ~2.5s
- *   v4: 500 × File.delete() parallel (2 threads) @ ~5ms each = ~1.3s
- *   + skip MediaScanner: save ~100ms
- *   + batch folder cache: save ~50ms
- *   + reduce broadcasts: save ~80ms
- *   Total: ~1.0s (vs v3 ~2.7s, vs stock ~10-30s)
- * </pre>
+ * <h3>Compatibility matrix (v5)</h3>
+ * <table>
+ *   <tr><th>Scenario</th><th>v4</th><th>v5</th></tr>
+ *   <tr><td>Local + MANAGE_EXTERNAL_STORAGE</td><td>✅ Fast</td><td>✅ Fast (same)</td></tr>
+ *   <tr><td>Local without MANAGE_EXTERNAL_STORAGE (Android 11+)</td><td>⚠️ File tertinggal</td><td>✅ SAF fallback via w()</td></tr>
+ *   <tr><td>Old Android (API 24-28)</td><td>⚠️ File tertinggal</td><td>✅ File.delete() works (no scoped storage)</td></tr>
+ *   <tr><td>SMB cloud source (S>0, Q==1)</td><td>❌ File NOT deleted</td><td>✅ w() → d3.h.b() (SMB protocol)</td></tr>
+ *   <tr><td>Other remote (S>0, Q==2)</td><td>❌ File NOT deleted</td><td>✅ w() → d3.i.b() (remote API)</td></tr>
+ *   <tr><td>Cloud via e2.c (Q==3)</td><td>✅ Works</td><td>✅ Works (same)</td></tr>
+ *   <tr><td>Recycle Bin move (local)</td><td>✅ Fast</td><td>✅ Fast (same)</td></tr>
+ *   <tr><td>Recycle Bin move (cloud source)</td><td>⚠️ renameTo fails</td><td>✅ o8.a.m() fallback</td></tr>
+ * </table>
  */
 @SuppressWarnings("unused")
 public final class FastDeleteHelper {
 
     private static final String TAG = "FastDelete";
 
-    /**
-     * Thread pool size for parallel file deletion.
-     * Research shows 2 threads is optimal for ext4/f2fs filesystems;
-     * more causes kernel journal contention.
-     */
+    /** Thread pool size for parallel file deletion (optimal per research). */
     private static final int DELETE_THREAD_COUNT = 2;
 
-    /**
-     * Progress broadcast interval. Each p.X3() call is a broadcast IPC.
-     * Stock code calls it every file; v3 called every 5; v4 calls every 25.
-     */
+    /** Progress broadcast interval (each call = 1 broadcast IPC). */
     private static final int PROGRESS_INTERVAL = 25;
 
     private FastDeleteHelper() {}
 
-    /**
-     * Fast replacement for {@code e3.b.x(ArrayList)}.
-     *
-     * @param db    the {@code e3.b} database instance
-     * @param items the ArrayList of {@code c3.t} media items to delete
-     * @return {@code true} if handled; {@code false} to fall through to stock
-     */
+    // ═══════════════════════════════════════════════════════════════
+    // fastDelete — replacement for e3.b.x(ArrayList)
+    // ═══════════════════════════════════════════════════════════════
+
     public static boolean fastDelete(b db, ArrayList items) {
         if (items == null || items.isEmpty()) {
             return true;
@@ -125,48 +130,40 @@ public final class FastDeleteHelper {
             final ContentResolver cr = ctx.getContentResolver();
 
             final int size = items.size();
-            final ArrayList deletedItems = new ArrayList();
-            final ArrayList<String> pathsForMediaStoreCleanup = new ArrayList<>();
-            final HashSet<String> parentDirsToInvalidate = new HashSet<>();
-            final AtomicInteger fileDeleteSuccess = new AtomicInteger(0);
-            final AtomicInteger fileDeleteFailed = new AtomicInteger(0);
 
-            // Separate cloud files (Q==3) from local files (Q!=3)
-            // Cloud files cannot be parallelized easily (network I/O)
-            final ArrayList<t> localFiles = new ArrayList<>();
-            final ArrayList<t> cloudFiles = new ArrayList<>();
+            // ── Partition items by storage type ──
+            // Group A: Q==3 → cloud via e2.c (sequential, network I/O)
+            // Group B: S>0, Q!=3 → SMB/remote cloud source (sequential, w())
+            // Group C: S<=0, Q!=3 → local file (parallel File.delete() + w() fallback)
+            final ArrayList<t> cloudE2Files = new ArrayList<>();    // Q==3
+            final ArrayList<t> cloudSourceFiles = new ArrayList<>(); // S>0, Q!=3
+            final ArrayList<t> localFiles = new ArrayList<>();       // S<=0, Q!=3
 
             for (int i = 0; i < size; i++) {
                 Object obj = items.get(i);
                 if (!(obj instanceof t)) continue;
                 t tVar = (t) obj;
                 if (tVar.Q == 3) {
-                    cloudFiles.add(tVar);
+                    cloudE2Files.add(tVar);
+                } else if (tVar.S > 0) {
+                    cloudSourceFiles.add(tVar);
                 } else {
                     localFiles.add(tVar);
                 }
             }
 
-            // ── Process cloud files sequentially (network I/O, can't parallelize safely) ──
-            for (t tVar : cloudFiles) {
-                try {
-                    Object U1 = p.U1(tVar.j, tVar.S);
-                    if (U1 != null) {
-                        ((e2.c) U1).m();
-                        ((e2.c) U1).j().close();
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Cloud delete failed for " + tVar.j, e);
-                }
-                deletedItems.add(tVar);
-            }
+            final ArrayList deletedItems = new ArrayList();
+            final ArrayList<String> pathsForMediaStoreCleanup = new ArrayList<>();
+            final HashSet<String> parentDirsToInvalidate = new HashSet<>();
+            final AtomicInteger fileDeleteSuccess = new AtomicInteger(0);
+            final AtomicInteger fileDeleteFailed = new AtomicInteger(0);
 
-            // ── Parallel File.delete() for local files ──
+            // ── Group C: Parallel File.delete() for local files ──
             if (!localFiles.isEmpty()) {
                 final int localSize = localFiles.size();
                 final ExecutorService executor = Executors.newFixedThreadPool(
                     Math.min(DELETE_THREAD_COUNT, localSize));
-
+                final ArrayList<t> failedLocalFiles = new ArrayList<>(); // need w() fallback
                 final ArrayList<Throwable> errors = new ArrayList<>();
 
                 for (int i = 0; i < localSize; i++) {
@@ -178,7 +175,6 @@ public final class FastDeleteHelper {
                             String path = tVar.j;
                             File file = new File(path);
 
-                            // Collect parent dir for batched cache invalidation
                             String parent = file.getParent();
                             if (parent != null) {
                                 synchronized (parentDirsToInvalidate) {
@@ -190,30 +186,34 @@ public final class FastDeleteHelper {
                             if (file.exists()) {
                                 deleted = file.delete();
                             } else {
-                                deleted = true;  // already gone
+                                // File doesn't exist — consider it deleted.
+                                // Stock w() does the same: if !b() && !c(), set b10=true.
+                                deleted = true;
                             }
 
                             if (deleted) {
                                 fileDeleteSuccess.incrementAndGet();
+                                if (b0.Z != null) {
+                                    synchronized (b0.Z) {
+                                        b0.Z.add(path);
+                                    }
+                                }
+                                synchronized (deletedItems) {
+                                    deletedItems.add(tVar);
+                                }
+                                synchronized (pathsForMediaStoreCleanup) {
+                                    pathsForMediaStoreCleanup.add(path);
+                                }
                             } else {
+                                // File.delete() failed — likely SAF-only path
+                                // (Android 11+ without MANAGE_EXTERNAL_STORAGE).
+                                // Collect for sequential w() fallback.
                                 fileDeleteFailed.incrementAndGet();
-                            }
-
-                            // Add to b0.Z (stock code tracks deleted paths)
-                            if (b0.Z != null) {
-                                synchronized (b0.Z) {
-                                    b0.Z.add(path);
+                                synchronized (failedLocalFiles) {
+                                    failedLocalFiles.add(tVar);
                                 }
                             }
 
-                            synchronized (deletedItems) {
-                                deletedItems.add(tVar);
-                            }
-                            synchronized (pathsForMediaStoreCleanup) {
-                                pathsForMediaStoreCleanup.add(path);
-                            }
-
-                            // Throttled progress update
                             if (index == 0 || index == localSize - 1 ||
                                 (index % PROGRESS_INTERVAL) == 0) {
                                 p.X3(index + 1, localSize);
@@ -240,14 +240,87 @@ public final class FastDeleteHelper {
                         Log.w(TAG, "Delete error", e);
                     }
                 }
+
+                // ── Sequential w() fallback for failed local files ──
+                // w() will use N(false).b() which dispatches to o8.g (SAF)
+                // on Android 11+ without MANAGE_EXTERNAL_STORAGE.
+                // SAF correctly deletes the physical file.
+                if (!failedLocalFiles.isEmpty()) {
+                    Log.i(TAG, "Falling back to w() for " + failedLocalFiles.size() +
+                        " local files (File.delete() failed)");
+                    for (t tVar : failedLocalFiles) {
+                        try {
+                            if (db.w(tVar)) {
+                                synchronized (deletedItems) {
+                                    deletedItems.add(tVar);
+                                }
+                                synchronized (pathsForMediaStoreCleanup) {
+                                    pathsForMediaStoreCleanup.add(tVar.j);
+                                }
+                            } else {
+                                Log.w(TAG, "w() also failed for: " + tVar.j);
+                            }
+                        } catch (Exception e) {
+                            Log.w(TAG, "w() fallback error for " + tVar.j, e);
+                        }
+                    }
+                }
+            }
+
+            // ── Group B: Sequential w() for SMB/remote cloud sources ──
+            // These need d3.h.b() (SMB) or d3.i.b() (remote) — cannot use
+            // File.delete() because paths are protocol-based (smb://, etc.)
+            if (!cloudSourceFiles.isEmpty()) {
+                Log.i(TAG, "Processing " + cloudSourceFiles.size() +
+                    " cloud source files sequentially (SMB/remote)");
+                for (int i = 0; i < cloudSourceFiles.size(); i++) {
+                    t tVar = cloudSourceFiles.get(i);
+                    try {
+                        // Folder cache invalidation (stock does this before w())
+                        String parent = new File(tVar.j).getParent();
+                        if (parent != null) {
+                            parentDirsToInvalidate.add(parent);
+                        }
+                        if (db.w(tVar)) {
+                            deletedItems.add(tVar);
+                            // No MediaStore cleanup for cloud sources (Q!=0)
+                        } else {
+                            Log.w(TAG, "w() failed for cloud source: " + tVar.j);
+                        }
+                    } catch (Exception e) {
+                        Log.w(TAG, "Cloud source delete error for " + tVar.j, e);
+                    }
+                    p.X3(i + 1, cloudSourceFiles.size());
+                }
+            }
+
+            // ── Group A: Sequential cloud e2.c handling (Q==3) ──
+            if (!cloudE2Files.isEmpty()) {
+                Log.i(TAG, "Processing " + cloudE2Files.size() +
+                    " cloud e2.c files sequentially");
+                for (int i = 0; i < cloudE2Files.size(); i++) {
+                    t tVar = cloudE2Files.get(i);
+                    try {
+                        Object U1 = p.U1(tVar.j, tVar.S);
+                        if (U1 != null) {
+                            ((e2.c) U1).m();
+                            ((e2.c) U1).j().close();
+                        }
+                        deletedItems.add(tVar);
+                    } catch (Exception e) {
+                        Log.w(TAG, "Cloud e2.c delete failed for " + tVar.j, e);
+                    }
+                    p.X3(i + 1, cloudE2Files.size());
+                }
             }
 
             Log.i(TAG, "fastDelete: " + size + " items (local=" + localFiles.size() +
-                ", cloud=" + cloudFiles.size() + "), File.delete OK=" +
-                fileDeleteSuccess.get() + " failed=" + fileDeleteFailed.get());
+                ", cloudSource=" + cloudSourceFiles.size() +
+                ", cloudE2=" + cloudE2Files.size() +
+                "), File.delete OK=" + fileDeleteSuccess.get() +
+                " failed=" + fileDeleteFailed.get());
 
             // ── Batched folder cover cache invalidation ──
-            // Stock code calls b0.H.c(parent) per file; we batch to unique parents.
             for (String parent : parentDirsToInvalidate) {
                 try {
                     b0.H.c(parent);
@@ -257,9 +330,7 @@ public final class FastDeleteHelper {
             }
 
             // ── BATCHED MediaStore cleanup ──
-            // Single SQL call per volume URI using _data IN (?,?,...).
-            // On Android 10+, this also deletes the physical file for paths
-            // where File.delete() failed (SAF-only paths).
+            // Only for local file paths (Q==0). Cloud source paths are not in MediaStore.
             if (!pathsForMediaStoreCleanup.isEmpty()) {
                 batchedMediaStoreDelete(cr, pathsForMediaStoreCleanup);
             }
@@ -269,9 +340,9 @@ public final class FastDeleteHelper {
             db.Y2(items);
 
             // ── MediaScanner (conditional) ──
-            // Skip if MANAGE_EXTERNAL_STORAGE granted — MediaStore auto-updates
-            // via the batched delete above. Only call MediaScanner for SAF paths
-            // (where File.delete() failed and we relied on MediaStore delete).
+            // Skip if all File.delete() succeeded AND no cloud fallback needed.
+            // Only call MediaScanner if there were failures (SAF paths that
+            // need MediaStore refresh).
             if (fileDeleteFailed.get() > 0 && !deletedItems.isEmpty()) {
                 String[] paths = new String[deletedItems.size()];
                 for (int i = 0; i < deletedItems.size(); i++) {
@@ -291,11 +362,10 @@ public final class FastDeleteHelper {
         }
     }
 
-    /**
-     * Fast replacement for {@code e3.b.J2(ArrayList)} (move to recycle bin).
-     *
-     * v4: Parallel File.renameTo() for local files. Cloud files stay sequential.
-     */
+    // ═══════════════════════════════════════════════════════════════
+    // fastMoveToRecycleBin — replacement for e3.b.J2(ArrayList)
+    // ═══════════════════════════════════════════════════════════════
+
     public static boolean fastMoveToRecycleBin(b db, ArrayList items) {
         if (items == null || items.isEmpty()) {
             return true;
@@ -312,6 +382,24 @@ public final class FastDeleteHelper {
             final ContentResolver cr = ctx.getContentResolver();
 
             final int size = items.size();
+
+            // ── Partition: local (S<=0, Q!=3) vs cloud (S>0 or Q==3) ──
+            // Cloud sources cannot use File.renameTo() — must use o8.a.m()
+            // which dispatches to the correct cloud protocol.
+            final ArrayList<t> localFiles = new ArrayList<>();
+            final ArrayList<t> cloudFiles = new ArrayList<>();
+
+            for (int i = 0; i < size; i++) {
+                Object obj = items.get(i);
+                if (!(obj instanceof t)) continue;
+                t tVar = (t) obj;
+                if (tVar.S > 0 || tVar.Q == 3) {
+                    cloudFiles.add(tVar);
+                } else {
+                    localFiles.add(tVar);
+                }
+            }
+
             final ArrayList movedItems = new ArrayList();
             final ArrayList notExistsItems = new ArrayList();
             final ArrayList<String> pathsForMediaStoreCleanup = new ArrayList<>();
@@ -320,117 +408,169 @@ public final class FastDeleteHelper {
             final AtomicInteger renameSuccess = new AtomicInteger(0);
             final AtomicInteger renameFailed = new AtomicInteger(0);
 
-            // Parallel rename for local files
-            final ExecutorService executor = Executors.newFixedThreadPool(
-                Math.min(DELETE_THREAD_COUNT, size));
-            final ArrayList<Throwable> errors = new ArrayList<>();
+            // ── Parallel File.renameTo() for local files ──
+            if (!localFiles.isEmpty()) {
+                final int localSize = localFiles.size();
+                final ExecutorService executor = Executors.newFixedThreadPool(
+                    Math.min(DELETE_THREAD_COUNT, localSize));
+                final ArrayList<t> failedLocalFiles = new ArrayList<>();
+                final ArrayList<Throwable> errors = new ArrayList<>();
 
-            for (int i = 0; i < size; i++) {
-                Object obj = items.get(i);
-                if (!(obj instanceof t)) continue;
-                final t tVar = (t) obj;
-                final int index = i;
+                for (int i = 0; i < localSize; i++) {
+                    final t tVar = localFiles.get(i);
+                    final int index = i;
 
-                executor.execute(() -> {
-                    try {
-                        String destPath = p.D1(tVar.i);
-                        if (destPath == null) {
+                    executor.execute(() -> {
+                        try {
+                            String destPath = p.D1(tVar.i);
+                            if (destPath == null) {
+                                synchronized (errors) {
+                                    errors.add(new RuntimeException(
+                                        "D1 returned null for id=" + tVar.i));
+                                }
+                                return;
+                            }
+
+                            File srcFile = new File(tVar.j);
+                            File destFile = new File(destPath);
+
+                            if (!srcFile.exists()) {
+                                synchronized (notExistsItems) {
+                                    notExistsItems.add(tVar);
+                                }
+                                return;
+                            }
+
+                            File destDir = destFile.getParentFile();
+                            if (destDir != null && !destDir.exists()) {
+                                destDir.mkdirs();
+                            }
+
+                            String parent = srcFile.getParent();
+                            if (parent != null) {
+                                synchronized (parentDirsToInvalidate) {
+                                    parentDirsToInvalidate.add(parent);
+                                }
+                            }
+
+                            // Try File.renameTo() first (instant for same-filesystem)
+                            boolean moved = srcFile.renameTo(destFile);
+
+                            if (!moved) {
+                                // renameTo failed — likely cross-filesystem.
+                                // Fall back to o8.a.m() which handles copy+delete.
+                                synchronized (failedLocalFiles) {
+                                    failedLocalFiles.add(tVar);
+                                }
+                                renameFailed.incrementAndGet();
+                            } else {
+                                renameSuccess.incrementAndGet();
+                                if (tVar.Q == 0) {
+                                    synchronized (pathsForMediaStoreCleanup) {
+                                        pathsForMediaStoreCleanup.add(tVar.j);
+                                    }
+                                }
+                                synchronized (idsForG2Batch) {
+                                    idsForG2Batch.add(tVar.i);
+                                }
+                                synchronized (movedItems) {
+                                    movedItems.add(tVar);
+                                }
+                                b0.R4 = true;
+                            }
+
+                            if (index == 0 || index == localSize - 1 ||
+                                (index % PROGRESS_INTERVAL) == 0) {
+                                p.X3(index + 1, localSize);
+                            }
+                        } catch (Throwable e) {
                             synchronized (errors) {
-                                errors.add(new RuntimeException("D1 returned null for id=" + tVar.i));
-                            }
-                            return;
-                        }
-
-                        File srcFile = new File(tVar.j);
-                        File destFile = new File(destPath);
-
-                        if (!srcFile.exists()) {
-                            synchronized (notExistsItems) {
-                                notExistsItems.add(tVar);
-                            }
-                            return;
-                        }
-
-                        // Ensure dest directory exists
-                        File destDir = destFile.getParentFile();
-                        if (destDir != null && !destDir.exists()) {
-                            destDir.mkdirs();
-                        }
-
-                        // Collect parent for batched cache invalidation
-                        String parent = srcFile.getParent();
-                        if (parent != null) {
-                            synchronized (parentDirsToInvalidate) {
-                                parentDirsToInvalidate.add(parent);
+                                errors.add(e);
                             }
                         }
+                    });
+                }
 
-                        // Try File.renameTo() directly
-                        boolean moved = srcFile.renameTo(destFile);
+                executor.shutdown();
+                try {
+                    executor.awaitTermination(120, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    Log.w(TAG, "Parallel move interrupted", e);
+                }
 
-                        if (!moved) {
-                            // renameTo failed (cross-filesystem) — fall back to o8.a.m()
-                            try {
-                                Object Nobj = tVar.N(false);
-                                if (Nobj != null) {
-                                    o8.d N = (o8.d) Nobj;
-                                    o8.e eVar = new o8.e(destPath);
-                                    moved = o8.a.m(N, eVar);
-                                }
-                            } catch (Exception e) {
-                                Log.w(TAG, "Move fallback failed for " + tVar.j, e);
-                            }
-                        }
+                if (!errors.isEmpty()) {
+                    Log.w(TAG, "Parallel move had " + errors.size() + " errors");
+                    for (Throwable e : errors) {
+                        Log.w(TAG, "Move error", e);
+                    }
+                }
 
-                        if (moved) {
-                            renameSuccess.incrementAndGet();
-                            if (tVar.Q == 0) {
-                                synchronized (pathsForMediaStoreCleanup) {
-                                    pathsForMediaStoreCleanup.add(tVar.j);
+                // ── Sequential o8.a.m() fallback for failed local files ──
+                if (!failedLocalFiles.isEmpty()) {
+                    Log.i(TAG, "Falling back to o8.a.m() for " + failedLocalFiles.size() +
+                        " local files (renameTo failed)");
+                    for (t tVar : failedLocalFiles) {
+                        try {
+                            String destPath = p.D1(tVar.i);
+                            if (destPath == null) continue;
+                            Object Nobj = tVar.N(false);
+                            if (Nobj != null) {
+                                o8.d N = (o8.d) Nobj;
+                                o8.e eVar = new o8.e(destPath);
+                                if (o8.a.m(N, eVar)) {
+                                    if (tVar.Q == 0) {
+                                        pathsForMediaStoreCleanup.add(tVar.j);
+                                    }
+                                    idsForG2Batch.add(tVar.i);
+                                    movedItems.add(tVar);
+                                    b0.R4 = true;
+                                    renameSuccess.incrementAndGet();
+                                } else {
+                                    Log.w(TAG, "o8.a.m() also failed for: " + tVar.j);
                                 }
                             }
-                            synchronized (idsForG2Batch) {
-                                idsForG2Batch.add(tVar.i);
-                            }
-                            synchronized (movedItems) {
-                                movedItems.add(tVar);
-                            }
-                            b0.R4 = true;
-                        } else {
-                            renameFailed.incrementAndGet();
-                            Log.w(TAG, "Move failed for: " + tVar.j + " -> " + destPath);
-                        }
-
-                        // Throttled progress
-                        if (index == 0 || index == size - 1 ||
-                            (index % PROGRESS_INTERVAL) == 0) {
-                            p.X3(index + 1, size);
-                        }
-                    } catch (Throwable e) {
-                        synchronized (errors) {
-                            errors.add(e);
+                        } catch (Exception e) {
+                            Log.w(TAG, "Move fallback error for " + tVar.j, e);
                         }
                     }
-                });
-            }
-
-            executor.shutdown();
-            try {
-                executor.awaitTermination(120, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                Log.w(TAG, "Parallel move interrupted", e);
-            }
-
-            if (!errors.isEmpty()) {
-                Log.w(TAG, "Parallel move had " + errors.size() + " errors");
-                for (Throwable e : errors) {
-                    Log.w(TAG, "Move error", e);
                 }
             }
 
-            Log.i(TAG, "fastMoveToRecycleBin: " + size + " items, rename OK=" +
-                renameSuccess.get() + " failed=" + renameFailed.get());
+            // ── Sequential o8.a.m() for cloud source files ──
+            if (!cloudFiles.isEmpty()) {
+                Log.i(TAG, "Processing " + cloudFiles.size() +
+                    " cloud files sequentially (cannot renameTo)");
+                for (int i = 0; i < cloudFiles.size(); i++) {
+                    t tVar = cloudFiles.get(i);
+                    try {
+                        String destPath = p.D1(tVar.i);
+                        if (destPath == null) continue;
+                        Object Nobj = tVar.N(false);
+                        if (Nobj == null) continue;
+                        o8.d N = (o8.d) Nobj;
+                        o8.e eVar = new o8.e(destPath);
+                        if (o8.a.m(N, eVar)) {
+                            if (tVar.Q == 0) {
+                                pathsForMediaStoreCleanup.add(tVar.j);
+                            }
+                            idsForG2Batch.add(tVar.i);
+                            movedItems.add(tVar);
+                            b0.R4 = true;
+                        } else {
+                            Log.w(TAG, "Cloud move failed for: " + tVar.j);
+                        }
+                    } catch (Exception e) {
+                        Log.w(TAG, "Cloud move error for " + tVar.j, e);
+                    }
+                    p.X3(i + 1, cloudFiles.size());
+                }
+            }
+
+            Log.i(TAG, "fastMoveToRecycleBin: " + size + " items (local=" +
+                localFiles.size() + ", cloud=" + cloudFiles.size() +
+                "), rename OK=" + renameSuccess.get() +
+                " failed=" + renameFailed.get());
 
             // Batched folder cover cache invalidation
             for (String parent : parentDirsToInvalidate) {
@@ -463,6 +603,10 @@ public final class FastDeleteHelper {
             return false;
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Private helpers
+    // ═══════════════════════════════════════════════════════════════
 
     private static void batchedMediaStoreDelete(ContentResolver cr, ArrayList<String> paths) {
         if (paths.isEmpty()) return;
