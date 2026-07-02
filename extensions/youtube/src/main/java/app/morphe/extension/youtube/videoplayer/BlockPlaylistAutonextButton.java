@@ -74,7 +74,7 @@ public class BlockPlaylistAutonextButton {
      */
     private static int countOtherOverlayButtons() {
         int count = 0;
-        if (Settings.COPY_VIDEO_URL_BUTTON.get()) count++;
+        if (Settings.COPY_VIDEO_LINK_BUTTON.get()) count++;
         if (Settings.PLAYBACK_SPEED_DIALOG_BUTTON.get()) count++;
         if (Settings.VIDEO_QUALITY_DIALOG_BUTTON.get()) count++;
         return count;
