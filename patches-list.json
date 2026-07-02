@@ -1,5 +1,5 @@
 {
-  "version": "1.32.0",
+  "version": "v1.32.0-experimental.1",
   "patches": [
     {
       "name": "Alternative thumbnails",
@@ -76,6 +76,76 @@
       "default": true,
       "dependencies": [
         "BytecodePatch",
+        "BytecodePatch",
+        "BytecodePatch"
+      ],
+      "compatiblePackages": [
+        {
+          "packageName": "com.google.android.youtube",
+          "name": "YouTube",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#FF0033",
+          "signatures": [
+            "5aad2bee6db95d17e05a08d7d1e64c10a1511879154483916b6ae6c7fd9cb0c6",
+            "3d7a1223019aa39d9ea0e3436ab7c0896bfb4fb679f4de5fe7c23f326c8f994a"
+          ],
+          "targets": [
+            {
+              "version": "21.25.523",
+              "isExperimental": true,
+              "minSdk": 29,
+              "description": null
+            },
+            {
+              "version": "21.24.360",
+              "isExperimental": true,
+              "minSdk": 29,
+              "description": null
+            },
+            {
+              "version": "21.23.480",
+              "isExperimental": true,
+              "minSdk": 28,
+              "description": null
+            },
+            {
+              "version": "21.05.265",
+              "isExperimental": true,
+              "minSdk": 28,
+              "description": null
+            },
+            {
+              "version": "20.51.39",
+              "isExperimental": false,
+              "minSdk": 28,
+              "description": null
+            },
+            {
+              "version": "20.31.42",
+              "isExperimental": false,
+              "minSdk": 28,
+              "description": null
+            },
+            {
+              "version": "20.21.37",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Block playlist auto-next",
+      "description": "Adds an option to block automatic navigation to the next video in playlists and mixes, with a toggle button in the player overlay.",
+      "default": true,
+      "dependencies": [
+        "BytecodePatch",
+        "BytecodePatch",
+        "ResourcePatch",
         "BytecodePatch",
         "BytecodePatch"
       ],
@@ -2272,6 +2342,33 @@
       "options": []
     },
     {
+      "name": "Disable telemetry",
+      "description": "Stops F-Stop from sending crash reports, device info, and usage data to third-party analytics services.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Disable video codecs",
       "description": "Adds options to disable HDR and VP9 codecs.",
       "default": true,
@@ -2857,6 +2954,60 @@
       "options": []
     },
     {
+      "name": "Fast batch delete",
+      "description": "Makes deleting many selected files at once nearly instant, regardless of whether Recycle Bin is on or off.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Fix text file viewer setting",
+      "description": "Fixes a bug where text files (.txt etc.) still open with the built-in FX Text Viewer/Editor even when 'Text Files' is unchecked in Settings > Opening Files. When unchecked, text files will now correctly open via the 'Open With' dialog (or the default app if 'Open files externally' patch is also applied). This fixes a pre-existing bug in FX Explorer.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Force original audio",
       "description": "Adds an option to always use the original audio track.",
       "default": true,
@@ -2979,6 +3130,36 @@
               "version": "20.21.37",
               "isExperimental": false,
               "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Generate all folder covers",
+      "description": "Adds a button in Settings → Cache to generate cover thumbnails for all folders in the background. A progress notification with Pause, Resume, and Stop buttons is shown while generating. Works together with the 'Persist folder cover metadata' patch — after generating, covers load instantly on restart.",
+      "default": true,
+      "dependencies": [
+        "ResourcePatch",
+        "ResourcePatch"
+      ],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
               "description": null
             }
           ]
@@ -4671,6 +4852,33 @@
       "options": []
     },
     {
+      "name": "License compatibility",
+      "description": "Makes the patched app still recognize the FX Plus License Key app, so your existing paid license keeps working. Use this if you own the FX Plus license key. If you don't own one, use the 'Unlock premium' patch instead.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Loop video",
       "description": "Adds an option to loop videos and display loop video button in the video player.",
       "default": true,
@@ -5211,6 +5419,33 @@
       "options": []
     },
     {
+      "name": "Open files externally",
+      "description": "Adds missing MIME types for .md, .yaml, .toml and other file extensions, so files with these extensions can be opened directly with external applications instead of showing the 'Open As' dialog. Also adds an 'Open With Default' section to the 'Open With' dialog with a wildcard MIME type button that remembers your app choice per file extension, and a 'Clear Default' button to reset stored defaults. Fixes video and audio files showing the system's dark 'Open with' dialog instead of FX Explorer's native green 'Open With' dialog when internal players are disabled.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Open links directly",
       "description": "Adds an option to skip over redirection URLs in external links.",
       "default": true,
@@ -5657,6 +5892,33 @@
       "options": []
     },
     {
+      "name": "Persist folder cover metadata",
+      "description": "Makes folder cover thumbnails load instantly on restart, just like image thumbnails do. The first time you view a folder its cover is remembered, so every restart after that shows all your folder covers immediately instead of loading them one by one.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Play all",
       "description": "Adds an option to play all the videos from a channel and to display play all button in the video player.",
       "default": true,
@@ -5787,6 +6049,60 @@
               "version": "20.21.37",
               "isExperimental": false,
               "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Preserve filter on refresh",
+      "description": "Implements per-directory, per-tab filter persistence and scroll position preservation. When navigating into a subdirectory, the filter is cleared. When returning to the parent directory, the previous filter is restored. Filter state is isolated between tabs (in-memory only, cleared on restart). Scroll position is preserved when returning from viewing a file in an external app (requires the 'Open files externally' patch to be enabled).",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Quick select in media viewer",
+      "description": "Adds a quick select button in the image viewer so you can select or deselect the current photo or video with a single tap instead of long-pressing on the thumbnail strip.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
               "description": null
             }
           ]
@@ -6638,6 +6954,66 @@
       "options": []
     },
     {
+      "name": "Side-by-side installation",
+      "description": "Lets you install this patched version alongside the original F-Stop from the Play Store, so both can coexist on the same device.",
+      "default": true,
+      "dependencies": [
+        "ResourcePatch",
+        "ResourcePatch"
+      ],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Side-by-side installation",
+      "description": "Lets you install this patched version alongside the original FX Explorer from the Play Store, so both can coexist on the same device.",
+      "default": true,
+      "dependencies": [
+        "ResourcePatch",
+        "ResourcePatch"
+      ],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "SponsorBlock",
       "description": "Adds options to enable and configure SponsorBlock, which can skip undesired video segments such as sponsored content.",
       "default": true,
@@ -7372,6 +7748,87 @@
       "options": []
     },
     {
+      "name": "True lazy load folder thumbnails",
+      "description": "Makes folder covers load in the order you actually see them. When you scroll down fast, the folders currently on screen load first instead of waiting for ones you've already scrolled past.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Unlock premium",
+      "description": "Unlocks all premium features for free.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Unlock premium",
+      "description": "Unlocks all premium features without needing the FX Plus License Key app.",
+      "default": false,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
       "name": "Video ads",
       "description": "Adds an option to remove ads in the video player.",
       "default": true,
@@ -7500,6 +7957,33 @@
             },
             {
               "version": "20.21.37",
+              "isExperimental": false,
+              "minSdk": 26,
+              "description": null
+            }
+          ]
+        }
+      ],
+      "options": []
+    },
+    {
+      "name": "Web Access on hotspot",
+      "description": "Enables Web Access when the phone is acting as a mobile hotspot, even without Mobile Data being active. By default, FX Explorer's Web Access only works when connected to WiFi as a client or when Mobile Data is active with 'Cellular Access' enabled. This patch allows Web Access to start on a mobile hotspot LAN without requiring Mobile Data, since the hotspot creates a functional local network that other devices can connect to.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "nextapp.fx",
+          "name": "FX Explorer",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#4CAF50",
+          "signatures": [
+            "02f79730223f454ccd108414ec063618b762a4768aedfb64462d8416f417c677"
+          ],
+          "targets": [
+            {
+              "version": "9.1.0.8",
               "isExperimental": false,
               "minSdk": 26,
               "description": null
