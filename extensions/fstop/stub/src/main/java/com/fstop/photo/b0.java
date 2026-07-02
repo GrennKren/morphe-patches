@@ -11,6 +11,8 @@
  */
 package com.fstop.photo;
 
+import java.util.HashSet;
+
 import e3.b;
 
 @SuppressWarnings("unused")
@@ -33,6 +35,9 @@ public class b0 {
 
     /** Recycle bin dirty flag (PUBLIC static). Set true when items are moved to recycle bin. */
     public static boolean R4;
+
+    /** Deleted paths set (PUBLIC static). Used by stock code to track deleted files. */
+    public static HashSet<String> Z;
 
     public static int x() { return 0; }
 }

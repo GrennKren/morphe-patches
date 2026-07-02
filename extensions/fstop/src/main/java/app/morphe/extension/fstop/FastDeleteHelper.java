@@ -25,31 +25,44 @@ import c3.t;
 /**
  * Helper class for the "Fast batch delete" patch in F-Stop.
  *
- * <h2>Problem</h2>
- * When the user selects a large batch of images (30, 100, 500+) and taps
- * "Delete", F-Stop's stock deletion pipeline processes each file one-by-one
- * with per-file MediaStore IPC calls. Each file requires:
+ * <h2>v3 — Root Cause Fix: Bypass w() entirely</h2>
+ *
+ * <h3>Why v1/v2 were still slow</h3>
+ * The stock deletion pipeline calls {@code e3.b.w(t)} per file. Inside w(),
+ * the file is deleted via the o8.d wrapper:
+ * <ul>
+ *   <li>If MANAGE_EXTERNAL_STORAGE granted → o8.e → {@code File.delete()} (FAST)</li>
+ *   <li>If NOT granted → o8.g → {@code DocumentsContract.deleteDocument()} (SAF, SLOW)</li>
+ * </ul>
+ *
+ * v1/v2 of this patch still called {@code db.w(tVar)} per file, so when the
+ * user hadn't granted MANAGE_EXTERNAL_STORAGE, every file went through SAF
+ * (one IPC call per file, ~500ms-2s each). Batching MediaStore lookups
+ * didn't help because the bottleneck was the per-file SAF delete, not the
+ * MediaStore lookup.
+ *
+ * <h3>v3 Solution</h3>
+ * Bypass {@code w()} entirely:
  * <ol>
- *   <li>{@code p.d(path, ctx)} — 1 to 4 SQL queries via Binder IPC to
- *       MediaProvider to look up the file's MediaStore Uri by its
- *       {@code _data} path. This is the dominant cost.</li>
- *   <li>{@code ContentResolver.delete(uri, null, null)} — one IPC call
- *       per file to remove the entry from MediaStore.</li>
- *   <li>{@code p.X3(i, size)} — progress dialog UI update per file.</li>
+ *   <li>Try {@code File.delete()} directly for each file — instant syscall,
+ *       no IPC. Works for internal storage and SD card with
+ *       MANAGE_EXTERNAL_STORAGE.</li>
+ *   <li>If {@code File.delete()} fails (returns false), collect the path
+ *       for batched MediaStore delete — which also deletes the actual file
+ *       on Android 10+.</li>
+ *   <li>At the end: ONE batched {@code ContentResolver.delete(_data IN ?,...)}
+ *       call per volume URI. This deletes both the MediaStore entry AND the
+ *       physical file for any paths where File.delete() failed.</li>
+ *   <li>DB cleanup (U2/Y2) — already batched via SQL {@code _ID IN (...)}.</li>
+ *   <li>MediaScanner — already batched (single call with all paths).</li>
+ *   <li>Progress updates — throttled for >100 items to reduce broadcast IPC.</li>
  * </ol>
  *
- * For 500 files this is 1000-2500 Binder IPC calls plus 500 SQL
- * transactions on MediaProvider, taking 7-30 seconds on mid-range devices.
- *
- * <h2>Solution</h2>
- * Replace the per-file MediaStore URI lookup and per-file delete with a
- * SINGLE batched SQL {@code WHERE _data IN (?,?,...)} call per MediaStore
- * volume URI. This collapses N IPC calls into (num_volumes × 2) IPC calls
- * — typically 4 calls total for internal + SD card volumes.
- *
- * <h2>Fallback</h2>
- * If the fast path throws any exception, it returns {@code false} to
- * signal the caller to fall through to the original stock code.
+ * This eliminates ALL per-file IPC calls:
+ * - No per-file p.d() MediaStore lookup (eliminated in v1)
+ * - No per-file ContentResolver.delete() (eliminated in v1)
+ * - No per-file w() → SAF DocumentsContract.deleteDocument() (eliminated in v3)
+ * - No per-file p.X3() broadcast for large batches (throttled in v3)
  */
 @SuppressWarnings("unused")
 public final class FastDeleteHelper {
@@ -63,8 +76,7 @@ public final class FastDeleteHelper {
      *
      * @param db    the {@code e3.b} database instance
      * @param items the ArrayList of {@code c3.t} media items to delete
-     * @return {@code true} if handled (caller returns null);
-     *         {@code false} to fall through to stock code
+     * @return {@code true} if handled; {@code false} to fall through to stock
      */
     public static boolean fastDelete(b db, ArrayList items) {
         if (items == null || items.isEmpty()) {
@@ -82,27 +94,61 @@ public final class FastDeleteHelper {
             final ContentResolver cr = ctx.getContentResolver();
 
             final ArrayList deletedItems = new ArrayList();
-            final ArrayList<String> localPathsForMediaStore = new ArrayList<>();
+            final ArrayList<String> pathsForMediaStoreCleanup = new ArrayList<>();
 
             final int size = items.size();
+            int fileDeleteSuccess = 0;
+            int fileDeleteFailed = 0;
+
             for (int i = 0; i < size; i++) {
                 Object obj = items.get(i);
                 if (!(obj instanceof t)) continue;
                 t tVar = (t) obj;
 
                 if (tVar.Q != 3) {
-                    String parent = new File(tVar.j).getParent();
+                    // ── Local/SMB/remote file (not cloud) ──
+                    String path = tVar.j;
+                    String parent = new File(path).getParent();
                     if (parent != null) {
                         b0.H.c(parent);
                     }
 
-                    if (db.w(tVar)) {
+                    boolean deleted;
+                    if (tVar.Q == 0 || tVar.Q == 1 || tVar.Q == 2) {
+                        // Try File.delete() directly — bypasses o8.d wrapper
+                        // and avoids SAF DocumentsContract IPC.
+                        File file = new File(path);
+                        if (file.exists()) {
+                            deleted = file.delete();
+                        } else {
+                            // File doesn't exist — consider it deleted
+                            deleted = true;
+                        }
+                    } else {
+                        // Unknown Q — fall back to w()
+                        deleted = db.w(tVar);
+                    }
+
+                    if (deleted) {
+                        fileDeleteSuccess++;
+                        if (b0.Z != null) {
+                            b0.Z.add(path);
+                        }
                         deletedItems.add(tVar);
-                        if (tVar.Q == 0) {
-                            localPathsForMediaStore.add(tVar.j);
+                        pathsForMediaStoreCleanup.add(path);
+                    } else {
+                        // File.delete() failed — collect for batched MediaStore delete.
+                        // ContentResolver.delete() on MediaStore URIs also deletes
+                        // the physical file on Android 10+.
+                        fileDeleteFailed++;
+                        pathsForMediaStoreCleanup.add(path);
+                        deletedItems.add(tVar);  // still add for DB cleanup
+                        if (b0.Z != null) {
+                            b0.Z.add(path);
                         }
                     }
                 } else {
+                    // ── Cloud file (Q == 3) ──
                     try {
                         Object U1 = p.U1(tVar.j, tVar.S);
                         if (U1 != null) {
@@ -112,20 +158,33 @@ public final class FastDeleteHelper {
                     } catch (Exception e) {
                         Log.w(TAG, "Cloud delete failed for " + tVar.j, e);
                     }
+                    deletedItems.add(tVar);
                 }
 
-                if (size <= 100 || (i % 10) == 0 || i == size - 1) {
+                // Throttled progress: update every 5 items or at start/end.
+                // Stock code updates every file, sending a broadcast IPC each time.
+                // For 60 files that's 60 broadcasts; for 500 that's 500.
+                // We throttle to reduce IPC overhead.
+                if (i == 0 || i == size - 1 || (i % 5) == 0) {
                     p.X3(i + 1, size);
                 }
             }
 
-            if (!localPathsForMediaStore.isEmpty()) {
-                batchedMediaStoreDelete(cr, localPathsForMediaStore);
+            Log.i(TAG, "fastDelete: " + size + " items, File.delete OK=" +
+                fileDeleteSuccess + " failed=" + fileDeleteFailed);
+
+            // ── BATCHED MediaStore cleanup ──
+            // Single SQL call per volume URI using _data IN (?,?,...).
+            // On Android 10+, this also deletes the physical file.
+            if (!pathsForMediaStoreCleanup.isEmpty()) {
+                batchedMediaStoreDelete(cr, pathsForMediaStoreCleanup);
             }
 
+            // ── F-Stop DB cleanup (already batched) ──
             db.U2(deletedItems);
             db.Y2(items);
 
+            // ── MediaScanner (already batched) ──
             if (!deletedItems.isEmpty()) {
                 String[] paths = new String[deletedItems.size()];
                 for (int i = 0; i < deletedItems.size(); i++) {
@@ -148,9 +207,8 @@ public final class FastDeleteHelper {
     /**
      * Fast replacement for {@code e3.b.J2(ArrayList)} (move to recycle bin).
      *
-     * @param db    the {@code e3.b} database instance
-     * @param items the ArrayList of {@code c3.t} media items to move
-     * @return {@code true} if handled; {@code false} to fall through
+     * v3: Uses File.renameTo() directly instead of o8.a.m() (which goes
+     * through SAF for file moves). Falls back to o8.a.m() if rename fails.
      */
     public static boolean fastMoveToRecycleBin(b db, ArrayList items) {
         if (items == null || items.isEmpty()) {
@@ -169,61 +227,94 @@ public final class FastDeleteHelper {
 
             final ArrayList movedItems = new ArrayList();
             final ArrayList notExistsItems = new ArrayList();
-            final ArrayList<String> localPathsForMediaStore = new ArrayList<>();
+            final ArrayList<String> pathsForMediaStoreCleanup = new ArrayList<>();
             final ArrayList<Integer> idsForG2Batch = new ArrayList<>();
 
             final int size = items.size();
+            int renameSuccess = 0;
+            int renameFailed = 0;
+
             for (int i = 0; i < size; i++) {
                 Object obj = items.get(i);
                 if (!(obj instanceof t)) continue;
                 t tVar = (t) obj;
 
-                Object Nobj = tVar.N(false);
-                if (Nobj == null) {
-                    continue;
+                // Get recycle bin destination path
+                String destPath = p.D1(tVar.i);
+                if (destPath == null) {
+                    // Can't determine destination — fall back to stock
+                    Log.w(TAG, "fastMoveToRecycleBin: D1 returned null for id=" + tVar.i);
+                    return false;
                 }
-                o8.d N = (o8.d) Nobj;
-                o8.e eVar = new o8.e(p.D1(tVar.i));
 
-                try {
-                    if (!N.c()) {
-                        notExistsItems.add(tVar);
-                    } else {
-                        if (tVar.Q == 0) {
-                            localPathsForMediaStore.add(tVar.j);
-                        }
+                File srcFile = new File(tVar.j);
+                File destFile = new File(destPath);
 
-                        if (o8.a.m(N, eVar)) {
-                            try {
-                                b0.H.c(o8.d.f(tVar.j, ctx).i());
-                            } catch (Exception e) {
-                                Log.w(TAG, "Folder cover cache invalidation failed", e);
+                if (!srcFile.exists()) {
+                    notExistsItems.add(tVar);
+                } else {
+                    // Ensure dest directory exists
+                    File destDir = destFile.getParentFile();
+                    if (destDir != null && !destDir.exists()) {
+                        destDir.mkdirs();
+                    }
+
+                    // Try File.renameTo() directly — bypasses o8.a.m() / SAF
+                    boolean moved = srcFile.renameTo(destFile);
+
+                    if (!moved) {
+                        // renameTo failed (possibly cross-filesystem) — fall back to o8.a.m()
+                        try {
+                            Object Nobj = tVar.N(false);
+                            if (Nobj != null) {
+                                o8.d N = (o8.d) Nobj;
+                                o8.e eVar = new o8.e(destPath);
+                                moved = o8.a.m(N, eVar);
                             }
-
-                            idsForG2Batch.add(tVar.i);
-                            movedItems.add(tVar);
-                            b0.R4 = true;
-                        } else {
-                            Log.w(TAG, "Move to recycle bin failed for: " + tVar.j);
+                        } catch (Exception e) {
+                            Log.w(TAG, "Move fallback failed for " + tVar.j, e);
                         }
                     }
-                } catch (Exception e) {
-                    Log.w(TAG, "Exception during move for " + tVar.j, e);
+
+                    if (moved) {
+                        renameSuccess++;
+                        if (tVar.Q == 0) {
+                            pathsForMediaStoreCleanup.add(tVar.j);
+                        }
+                        try {
+                            b0.H.c(srcFile.getParent());
+                        } catch (Exception e) {
+                            Log.w(TAG, "Folder cover cache invalidation failed", e);
+                        }
+                        idsForG2Batch.add(tVar.i);
+                        movedItems.add(tVar);
+                        b0.R4 = true;
+                    } else {
+                        renameFailed++;
+                        Log.w(TAG, "Move failed for: " + tVar.j + " -> " + destPath);
+                    }
                 }
 
-                if (size <= 100 || (i % 10) == 0 || i == size - 1) {
+                // Throttled progress
+                if (i == 0 || i == size - 1 || (i % 5) == 0) {
                     p.X3(i + 1, size);
                 }
             }
 
-            if (!localPathsForMediaStore.isEmpty()) {
-                batchedMediaStoreDelete(cr, localPathsForMediaStore);
+            Log.i(TAG, "fastMoveToRecycleBin: " + size + " items, rename OK=" +
+                renameSuccess + " failed=" + renameFailed);
+
+            // Batched MediaStore cleanup
+            if (!pathsForMediaStoreCleanup.isEmpty()) {
+                batchedMediaStoreDelete(cr, pathsForMediaStoreCleanup);
             }
 
+            // Batched G2 SQL UPDATE
             if (!idsForG2Batch.isEmpty()) {
                 batchedG2Update(db, idsForG2Batch);
             }
 
+            // DB cleanup (batched)
             db.U2(notExistsItems);
             db.Y2(items);
             db.L2(movedItems);
@@ -253,7 +344,8 @@ public final class FastDeleteHelper {
 
         for (Uri uri : volumeUris) {
             try {
-                cr.delete(uri, selection, selectionArgs);
+                int deleted = cr.delete(uri, selection, selectionArgs);
+                Log.d(TAG, "MediaStore batched delete " + uri + ": " + deleted + " rows");
             } catch (Exception e) {
                 Log.w(TAG, "MediaStore batched delete failed for " + uri, e);
             }
@@ -273,7 +365,7 @@ public final class FastDeleteHelper {
                     uris.add(MediaStore.Video.Media.getContentUri(v));
                 }
             } catch (Exception e) {
-                Log.w(TAG, "getExternalVolumeNames failed, falling back to default", e);
+                Log.w(TAG, "getExternalVolumeNames failed", e);
                 uris.add(MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
                 uris.add(MediaStore.Video.Media.EXTERNAL_CONTENT_URI);
             }
