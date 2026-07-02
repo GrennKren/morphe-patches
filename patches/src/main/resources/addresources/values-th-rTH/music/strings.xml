@@ -58,6 +58,8 @@ Second \"item\" text"</string>
   <string name="morphe_crossfade_duration_8000ms">8 วินาที</string>
   <string name="morphe_crossfade_duration_9000ms">9 วินาที</string>
   <string name="morphe_crossfade_duration_10000ms">10 วินาที</string>
+  <string name="morphe_crossfade_duration_11000ms">11 วินาที</string>
+  <string name="morphe_crossfade_duration_12000ms">12 วินาที</string>
   <string name="morphe_music_crossfade_on_skip_title">Fade เมื่อข้ามเพลงด้วยตนเอง</string>
   <string name="morphe_music_crossfade_on_skip_summary">ใช้เอฟเฟกต์การผสมผสานเสียงเมื่อคุณข้ามไปยังแทร็กถัดไปด้วยตนเอง</string>
   <string name="morphe_music_crossfade_on_auto_advance_title">Fade เมื่อเปิดใช้งาน Auto-Advance</string>
@@ -67,15 +69,37 @@ Second \"item\" text"</string>
   <string name="morphe_music_crossfade_paused_toast">การเปลี่ยนเพลงแบบค่อยๆ จางหายถูกพักไว้สำหรับเซสชันนี้</string>
   <string name="morphe_music_crossfade_resumed_toast">การเปลี่ยนเพลงแบบค่อยๆ จางหายกลับมาทำงานต่อ</string>
   <string name="morphe_music_crossfade_video_mode_disabled_toast">โหมดวิดีโอไม่สามารถใช้ได้ขณะเปิดใช้งานการเปลี่ยนเพลงแบบค่อยๆ จางหาย</string>
+  <string name="morphe_music_crossfade_cast_unstable_toast">การเฟดเพลงจะหยุดชะงักขณะแคสต์หรือมิเรอร์เสียง การเฟดเพลงระหว่างแคสต์/มิเรอร์ไม่เสถียรและอาจไม่สามารถแก้ไขได้</string>
   <string name="morphe_music_crossfade_about_title">เกี่ยวกับ</string>
-  <string name="morphe_music_crossfade_about_summary">"Fade พร้อมใช้งานกับ YouTube Music 8.x
+  <string name="morphe_music_crossfade_about_summary">หลักการทำงานของการเฟดเพลง — และช่วงเวลาที่ไม่สามารถใช้งานได้</string>
+  <!-- Banner row has no text; it shows a full-width graphic via a custom layout. -->
+  <string name="morphe_music_crossfade_about_how_title">วิธีการทำงาน</string>
+  <string name="morphe_music_crossfade_about_how_summary">"การเฟดเพลงจะทับซ้อนช่วงท้ายของเพลงหนึ่งกับช่วงเริ่มต้นของเพลงถัดไป โดยจะค่อยๆ ลดเสียงของเพลงหนึ่งลงและเพิ่มเสียงของอีกเพลงขึ้นตามระยะเวลาและรูปแบบที่คุณเลือก
 
-กดค้างที่ปุ่ม Shuffle เพื่อปิด/เปิดใช้งาน
+จะทำงานกับการเล่นเพลงต่อเนื่องอัตโนมัติ (เมื่อเพลงสิ้นสุดลงด้วยตัวเอง) และการข้ามเพลงแบบแมนนวล — ซึ่งแต่ละแบบมีการตั้งค่าเปิด/ปิดแยกกัน ในการเล่นเพลงต่อเนื่องอัตโนมัติ การเปลี่ยนผ่านจะเริ่มขึ้นไม่กี่วินาทีก่อนเพลงจะสิ้นสุด
 
-Feature implementation by VazerOG"</string>
+จำเป็นต้องใช้ YouTube Music เวอร์ชัน 9.x หรือใหม่กว่า"</string>
+  <string name="morphe_music_crossfade_about_best_title">ใช้งานได้ดีที่สุดกับ</string>
+  <string name="morphe_music_crossfade_about_best_summary">การเล่นเพลงตามปกติและการเล่นต่อเนื่องอัตโนมัติ, เล่นซ้ำหนึ่งเพลง (เพลงจะเฟดเข้ากับเพลงตัวเอง), และเสียงจากอุปกรณ์ภายใน — ลำโพงโทรศัพท์, หูฟังแบบมีสาย, Bluetooth หรือ USB</string>
+  <string name="morphe_music_crossfade_about_quirks_title">ทำงานได้ไม่สมบูรณ์นัก</string>
+  <string name="morphe_music_crossfade_about_quirks_summary">"วิดีโอเพลงจะเล่นเป็นเสียงเท่านั้นเมื่อเปิดใช้งานการเฟดข้าม (กดแบบยาวที่ปุ่มสุ่มเพื่อหยุด หากต้องการดูวิดีโอ)
+
+เพลงที่มีความยาวน้อยกว่าระยะเวลาการเฟด อาจข้ามการเฟดไปได้
+
+หน้าจอล็อคหรือการแจ้งเตือน อาจแสดงสถานะเดิมชั่วคราวในช่วงเปลี่ยนผ่าน"</string>
+  <string name="morphe_music_crossfade_about_known_title">ปัญหาที่ทราบ</string>
+  <string name="morphe_music_crossfade_about_known_summary">"วิดีโอเพลงที่ตั้งเป็นเพลงแรก — หรือวิดีโอที่เริ่มจากภายนอกคิวปัจจุบัน — อาจแสดงเป็นวิดีโอในช่วงสั้นๆ ก่อนที่จะเข้าสู่โหมดเสียงเท่านั้น
+
+การหยุดการเฟดข้ามเพื่อดูวิดีโอเพลง อาจทำให้วิดีโอบางรายการเป็นสีดำ (วิดีโอที่เสียงมาจากวิดีโอโดยตรง) การหยุดการเฟดข้ามก่อนเลือกเพลงจะช่วยหลีกเลี่ยงปัญหานี้ได้"</string>
+  <string name="morphe_music_crossfade_about_unsupported_title">ใช้งานไม่ได้เลย</string>
+  <string name="morphe_music_crossfade_about_unsupported_summary">"การแคสต์หรือมิเรอร์เสียง (Chromecast, มิเรอร์หน้าจอหรือเสียง) — การเฟดข้ามจะหยุดทำงานเนื่องจากไม่เสถียร และอาจไม่สามารถแก้ไขได้
+
+YouTube Music 8.x — การเฟดข้ามจะทำงานบน 9.x ขึ้นไปเท่านั้น"</string>
+  <string name="morphe_music_crossfade_about_credit_title">เครดิต</string>
+  <string name="morphe_music_crossfade_about_credit_summary">คุณสมบัติ Crossfade โดย VazerOG</string>
   <!-- interaction.permanentrepeat.permanentRepeatPatch -->
   <string name="morphe_music_play_permanent_repeat_title">เปิดใช้งานเล่นซ้ำถาวร</string>
-  <!-- layout.buttons.hideButtons -->
+  <!-- layout.buttons.hideButtonsPatch -->
   <string name="morphe_music_hide_cast_button_title">ซ่อนปุ่มแคสต์</string>
   <string name="morphe_music_hide_history_button_title">ซ่อนปุ่มประวัติ</string>
   <string name="morphe_music_hide_notification_button_title">ซ่อนปุ่มการแจ้งเตือน</string>
@@ -92,17 +116,20 @@ Feature implementation by VazerOG"</string>
   <string name="morphe_change_start_page_entry_playlists">แพล่งของ</string>
   <string name="morphe_change_start_page_entry_search">ค้นหา</string>
   <string name="morphe_change_start_page_entry_subscriptions">สมัครสมาชิก</string>
-  <!-- layout.compactheader.hideCategoryBar -->
+  <!-- layout.compactheader.hideCategoryBarPatch -->
   <string name="morphe_music_hide_category_bar_title">ซ่อนแถบหมวดหมู่</string>
-  <!-- layout.miniplayer.changeMiniplayerColor -->
+  <!-- layout.miniplayer.changeMiniplayerColorPatch -->
   <string name="morphe_music_change_miniplayer_color_title">เปลี่ยนสีมินิเพลเยอร์</string>
   <string name="morphe_music_change_miniplayer_color_summary">สีมินิเพลเยอร์ตรงกับเครื่องเล่นแบบเต็มหน้าจอ</string>
-  <!-- layout.miniplayer.miniplayerNextPreviousButtons -->
+  <!-- layout.miniplayer.miniplayerNextPreviousButtonsPatch -->
   <string name="morphe_music_miniplayer_next_button_title">แสดงปุ่มถัดไปในมินิเพลเยอร์</string>
   <string name="morphe_music_miniplayer_previous_button_title">แสดงปุ่ม ย้อนกลับใน miniplayer</string>
-  <!-- layout.miniplayer.enableForcedMiniplayer -->
+  <!-- layout.miniplayer.enableForcedMiniplayerPatch -->
   <string name="morphe_music_enable_forced_miniplayer_title">เปิดใช้งานมินิเพลเยอร์แบบบังคับ</string>
   <string name="morphe_music_enable_forced_miniplayer_summary">ป้องกันไม่ให้เครื่องเล่นขยายเป็นแบบเต็มหน้าจอโดยอัตโนมัติเมื่อเริ่มแทร็กใหม่</string>
+  <!-- layout.miniplayer.enableSwipeToDismissMiniplayerPatch -->
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_title">เปิดใช้งานการปัดเพื่อปิดมินิเพลเยอร์</string>
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_summary">ช่วยให้สามารถปิดมินิเพลเยอร์ได้โดยการปัดลง</string>
   <!-- layout.navigationbar.navigationBarPatch -->
   <string name="morphe_music_navigation_bar_screen_title">แถบนำทาง</string>
   <string name="morphe_music_navigation_bar_screen_summary">เลือกปุ่มที่จะแสดงในแถบนำทางด้านล่าง</string>

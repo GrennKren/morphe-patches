@@ -9,12 +9,14 @@ import app.morphe.patches.shared.misc.settings.preference.PreferenceCategory
 import app.morphe.patches.shared.misc.settings.preference.PreferenceScreenPreference
 import app.morphe.patches.shared.misc.settings.preference.SwitchPreference
 import app.morphe.patches.youtube.misc.extension.sharedExtensionPatch
+import app.morphe.patches.youtube.misc.fix.videoactionbar.restoreOldVideoActionBarPatch
 import app.morphe.patches.youtube.misc.litho.context.EXTENSION_CONTEXT_INTERFACE
 import app.morphe.patches.youtube.misc.litho.context.conversionContextClassDef
 import app.morphe.patches.youtube.misc.litho.context.conversionContextPatch
 import app.morphe.patches.youtube.misc.litho.filter.addLithoFilter
 import app.morphe.patches.youtube.misc.litho.filter.lithoFilterPatch
 import app.morphe.patches.youtube.misc.playertype.playerTypeHookPatch
+import app.morphe.patches.youtube.misc.playservice.is_21_25_or_greater
 import app.morphe.patches.youtube.misc.settings.PreferenceScreen
 import app.morphe.patches.youtube.misc.settings.settingsPatch
 import app.morphe.patches.youtube.shared.Constants.COMPATIBILITY_YOUTUBE
@@ -23,7 +25,7 @@ import app.morphe.patches.youtube.video.videoid.hookPlayerResponseVideoId
 import app.morphe.patches.youtube.video.videoid.hookVideoId
 import app.morphe.patches.youtube.video.videoid.videoIdPatch
 import app.morphe.util.addInstructionsAtControlFlowLabel
-import app.morphe.util.cloneMutableAndPreserveParameters
+import app.morphe.util.cloneParameters
 import app.morphe.util.findFreeRegister
 import app.morphe.util.getReference
 import app.morphe.util.indexOfFirstInstructionOrThrow
@@ -55,18 +57,19 @@ val returnYouTubeDislikePatch = bytecodePatch(
         lithoFilterPatch,
         videoIdPatch,
         playerTypeHookPatch,
+        restoreOldVideoActionBarPatch,
     )
 
     compatibleWith(COMPATIBILITY_YOUTUBE)
 
     execute {
         PreferenceScreen.RETURN_YOUTUBE_DISLIKE.addPreferences(
-            SwitchPreference("morphe_ryd_enabled", summaryKey = null),
-            SwitchPreference("morphe_ryd_shorts"),
-            SwitchPreference("morphe_ryd_dislike_percentage"),
-            SwitchPreference("morphe_ryd_compact_layout"),
-            SwitchPreference("morphe_ryd_estimated_like"),
-            SwitchPreference("morphe_ryd_toast_on_connection_error"),
+            SwitchPreference("morphe_ryd_enabled"),
+            SwitchPreference("morphe_ryd_shorts", summary = true),
+            SwitchPreference("morphe_ryd_dislike_percentage", summary = true),
+            SwitchPreference("morphe_ryd_compact_layout", summary = true),
+            SwitchPreference("morphe_ryd_estimated_like", summary = true),
+            SwitchPreference("morphe_ryd_toast_on_connection_error", summary = true),
             NonInteractivePreference(
                 key = "morphe_ryd_attribution",
                 tag = "app.morphe.extension.youtube.returnyoutubedislike.ui.ReturnYouTubeDislikeAboutPreference",
@@ -123,10 +126,9 @@ val returnYouTubeDislikePatch = bytecodePatch(
         TextComponentLookupFingerprint.let {
             // 21.05 clobbers p0 (this) register.
             // Add additional registers so all parameters including p0 are free to use anywhere in the method.
-            it.method.cloneMutableAndPreserveParameters().apply {
+            it.method.cloneParameters().apply {
                 // Find the instruction for creating the text data object.
                 val textDataClassType = TextComponentDataFingerprint.originalClassDef.type
-
                 val insertIndex: Int = indexOfFirstInstructionOrThrow {
                     opcode == Opcode.NEW_INSTANCE &&
                             getReference<TypeReference>()?.type == textDataClassType
@@ -137,8 +139,6 @@ val returnYouTubeDislikePatch = bytecodePatch(
                             getReference<FieldReference>()?.type == "Ljava/lang/CharSequence;"
                 }
                 val charSequenceRegister = getInstruction<TwoRegisterInstruction>(charSequenceIndex).registerA
-
-
                 val conversionContext = findFreeRegister(insertIndex, charSequenceRegister)
 
                 addInstructionsAtControlFlowLabel(
@@ -171,7 +171,7 @@ val returnYouTubeDislikePatch = bytecodePatch(
                     ":" + textComponentConversionContextField.type
 
             // 21.05+ clobbers p0 and must clone to preserve it.
-            it.method.cloneMutableAndPreserveParameters().apply {
+            it.method.cloneParameters().apply {
                 // Must offset match indexes since cloning adds additional move instructions.
                 val insertIndex = it.instructionMatches[1].index + numberOfParameterRegistersLogical
                 val charSequenceRegister = getInstruction<FiveRegisterInstruction>(insertIndex).registerD
@@ -206,13 +206,9 @@ val returnYouTubeDislikePatch = bytecodePatch(
         RollingNumberSetterFingerprint.method.apply {
             val insertIndex = 1
             val dislikesIndex = RollingNumberSetterFingerprint.instructionMatches.last().index
-            val charSequenceInstanceRegister =
-                getInstruction<OneRegisterInstruction>(0).registerA
-            val charSequenceFieldReference =
-                getInstruction<ReferenceInstruction>(dislikesIndex).reference
-
+            val charSequenceInstanceRegister = getInstruction<OneRegisterInstruction>(0).registerA
+            val charSequenceFieldReference = getInstruction<ReferenceInstruction>(dislikesIndex).reference
             val conversionContextRegister = implementation!!.registerCount - parameters.size + 1
-
             val freeRegister = findFreeRegister(insertIndex, charSequenceInstanceRegister, conversionContextRegister)
 
             addInstructions(
@@ -228,7 +224,8 @@ val returnYouTubeDislikePatch = bytecodePatch(
 
         // Rolling Number text views use the measured width of the raw string for layout.
         // Modify the measure text calculation to include the left drawable separator if needed.
-        RollingNumberMeasureAnimatedTextFingerprint.let {
+        // 21.25+ removed the method and doesn't seem to have a replacement.
+        if (!is_21_25_or_greater) RollingNumberMeasureAnimatedTextFingerprint.let {
             // Additional check to verify the opcodes are at the start of the method
             if (it.instructionMatches.first().index != 0) throw PatchException("Unexpected opcode location")
             val endIndex = it.instructionMatches.last().index

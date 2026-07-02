@@ -10,10 +10,9 @@ package app.morphe.patches.youtube.layout.music
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
-import app.morphe.patches.shared.misc.settings.preference.PreferenceCategory
-import app.morphe.patches.shared.misc.settings.preference.PreferenceScreenPreference.Sorting
 import app.morphe.patches.shared.misc.settings.preference.SwitchPreference
 import app.morphe.patches.shared.misc.settings.preference.TextPreference
+import app.morphe.patches.shared.misc.settings.preference.noTitleUnsortedPreferenceCategory
 import app.morphe.patches.youtube.misc.settings.PreferenceScreen
 import app.morphe.patches.youtube.misc.settings.settingsPatch
 import app.morphe.patches.youtube.shared.Constants.COMPATIBILITY_YOUTUBE
@@ -55,14 +54,9 @@ val overrideYouTubeMusicButtonsPatch = bytecodePatch(
 
     execute {
         PreferenceScreen.GENERAL.addPreferences(
-            PreferenceCategory(
-                titleKey = null,
-                sorting = Sorting.UNSORTED,
-                tag = "app.morphe.extension.shared.settings.preference.NoTitlePreferenceCategory",
-                preferences = setOf(
-                    SwitchPreference(key = "morphe_override_youtube_music_buttons"),
-                    TextPreference(key = "morphe_music_package_name")
-                )
+            noTitleUnsortedPreferenceCategory(
+                SwitchPreference(key = "morphe_override_youtube_music_buttons", summary = true),
+                TextPreference(key = "morphe_music_package_name")
             )
         )
 
@@ -75,7 +69,7 @@ val overrideYouTubeMusicButtonsPatch = bytecodePatch(
                                 (it as? ReferenceInstruction)?.reference?.let { ref ->
                                     val mRef = ref as? MethodReference
                                     mRef?.definingClass == "Landroid/content/Intent;" &&
-                                            (mRef.name == "setPackage" || mRef.name == "setData")
+                                            (mRef.name == "setPackage" || mRef.name == "setData" || mRef.name == "setComponent")
                                 } == true
                     } == true) {
                     needsPatch = true
@@ -94,6 +88,8 @@ val overrideYouTubeMusicButtonsPatch = bytecodePatch(
                                     index to "overrideSetPackage(Landroid/content/Intent;Ljava/lang/String;)Landroid/content/Intent;"
                                 } else if (ref.name == "setData" && ref.parameterTypes == listOf("Landroid/net/Uri;")) {
                                     index to "overrideSetData(Landroid/content/Intent;Landroid/net/Uri;)Landroid/content/Intent;"
+                                } else if (ref.name == "setComponent" && ref.parameterTypes == listOf("Landroid/content/ComponentName;")) {
+                                    index to "overrideSetComponent(Landroid/content/Intent;Landroid/content/ComponentName;)Landroid/content/Intent;"
                                 } else null
                             } else null
                         } else null

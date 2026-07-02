@@ -58,6 +58,8 @@ Second \"item\" text"</string>
   <string name="morphe_crossfade_duration_8000ms">8 sekúnd</string>
   <string name="morphe_crossfade_duration_9000ms">9 sekúnd</string>
   <string name="morphe_crossfade_duration_10000ms">10 sekúnd</string>
+  <string name="morphe_crossfade_duration_11000ms">11 sekúnd</string>
+  <string name="morphe_crossfade_duration_12000ms">12 sekúnd</string>
   <string name="morphe_music_crossfade_on_skip_title">Prechod pri manuálnom preskočení</string>
   <string name="morphe_music_crossfade_on_skip_summary">Aplikuje efekt prechodu medzi skladbami, keď manuálne preskočíte na ďalšiu skladbu</string>
   <string name="morphe_music_crossfade_on_auto_advance_title">Prechod pri automatickom postupe</string>
@@ -67,15 +69,37 @@ Second \"item\" text"</string>
   <string name="morphe_music_crossfade_paused_toast">Prechodové zmiznutie zvuku pozastavené v tejto relácii</string>
   <string name="morphe_music_crossfade_resumed_toast">Prechodové zmiznutie zvuku obnovené</string>
   <string name="morphe_music_crossfade_video_mode_disabled_toast">Režim videa nie je dostupný, keď je zapnuté prechodové zmiznutie zvuku</string>
+  <string name="morphe_music_crossfade_cast_unstable_toast">Funkcia plynulého prechodu je pozastavená počas vysielania alebo zrkadlenia zvuku. Plynulý prechod počas vysielania/zrkadlenia je nestabilný a nemusí sa to nikdy podariť opraviť.</string>
   <string name="morphe_music_crossfade_about_title">O aplikácii</string>
-  <string name="morphe_music_crossfade_about_summary">"Prechod je dostupný s YouTube Music 8.x
+  <string name="morphe_music_crossfade_about_summary">Ako funguje plynulý prechod – a kedy nefunguje</string>
+  <!-- Banner row has no text; it shows a full-width graphic via a custom layout. -->
+  <string name="morphe_music_crossfade_about_how_title">Ako to funguje</string>
+  <string name="morphe_music_crossfade_about_how_summary">"Plynulý prechod prekrýva koniec jednej skladby s začiatkom ďalšej, pričom postupne znižuje hlasitosť jednej skladby a zvyšuje hlasitosť druhej počas vami zvolenej dĺžky a krivky.
 
-Dlhým stlačením tlačidla náhodného výberu ho vypnete/zapnete
+Funguje pri automatickom prechode (keď sa skladba skončí sama) a pri manuálnom preskočení – obe majú svoje vlastné prepínače vyššie. Pri automatickom prechode sa miešanie začne niekoľko sekúnd pred koncom skladby.
 
-Implementácia funkcie od VazerOG"</string>
+Vyžaduje YouTube Music 9.x alebo novší."</string>
+  <string name="morphe_music_crossfade_about_best_title">Najlepšie funguje s</string>
+  <string name="morphe_music_crossfade_about_best_summary">Štandardné prehrávanie skladieb, automatický prechod, opakovanie jednej skladby (skladba plynulo prechádza do seba) a lokálne audio – reproduktor telefónu, káblové slúchadlá, Bluetooth alebo USB.</string>
+  <string name="morphe_music_crossfade_about_quirks_title">Nefunguje celkom správne</string>
+  <string name="morphe_music_crossfade_about_quirks_summary">"Hudobné videá sa počas zapnutého crossfade prehrávajú iba so zvukom (dlhým stlačením tlačidla náhodného výberu pozastavíte, ak chcete aj video)
+
+Piesne kratšie ako trvanie prechodu môžu vynechať plynulý prechod
+
+Obrazovka uzamknutia alebo notifikácia môžu na krátky čas zobrazovať zastaraný stav počas prechodu"</string>
+  <string name="morphe_music_crossfade_about_known_title">Známe problémy</string>
+  <string name="morphe_music_crossfade_about_known_summary">"Hudobné video nastavené ako prvá pieseň – alebo spustené mimo aktuálnej fronty – sa môže na krátky čas zobraziť ako video, kým sa neaktivuje režim iba so zvukom
+
+Pauznutie crossfade na prezeranie hudobného videa môže spôsobiť, že niektoré videá zostanú čierne (tie, ktorých zvuk pochádza priamo z videa). Pauznutie crossfade pred výberom skladby tomu zabráni"</string>
+  <string name="morphe_music_crossfade_about_unsupported_title">Nefunguje vôbec</string>
+  <string name="morphe_music_crossfade_about_unsupported_summary">"Prehrávanie obsahu pomocou technológie Cast alebo zrkadlenie obrazovky (Chromecast, zrkadlenie obrazovky alebo zvuku) – crossfade sa pozastaví, pretože to nie je stabilné a nemusí to byť nikdy opravené.
+
+YouTube Music 8.x – crossfade funguje iba vo verzii 9.x a novších"</string>
+  <string name="morphe_music_crossfade_about_credit_title">Poďakovanie</string>
+  <string name="morphe_music_crossfade_about_credit_summary">Funkcia Crossfade od VazerOG</string>
   <!-- interaction.permanentrepeat.permanentRepeatPatch -->
   <string name="morphe_music_play_permanent_repeat_title">Zapnúť permanentné opakovanie prehrávania</string>
-  <!-- layout.buttons.hideButtons -->
+  <!-- layout.buttons.hideButtonsPatch -->
   <string name="morphe_music_hide_cast_button_title">Skryť tlačidlo Prenos</string>
   <string name="morphe_music_hide_history_button_title">Skryť tlačidlo histórie</string>
   <string name="morphe_music_hide_notification_button_title">Skryť tlačidlo upozornení</string>
@@ -92,17 +116,20 @@ Implementácia funkcie od VazerOG"</string>
   <string name="morphe_change_start_page_entry_playlists">Zoznamy</string>
   <string name="morphe_change_start_page_entry_search">Hľadať</string>
   <string name="morphe_change_start_page_entry_subscriptions">Odbery</string>
-  <!-- layout.compactheader.hideCategoryBar -->
+  <!-- layout.compactheader.hideCategoryBarPatch -->
   <string name="morphe_music_hide_category_bar_title">Skryť panel kategórií</string>
-  <!-- layout.miniplayer.changeMiniplayerColor -->
+  <!-- layout.miniplayer.changeMiniplayerColorPatch -->
   <string name="morphe_music_change_miniplayer_color_title">Zmeniť farbu miniprehrávača</string>
   <string name="morphe_music_change_miniplayer_color_summary">Farba miniprehrávača zodpovedá farbe prehrávača na celú obrazovku</string>
-  <!-- layout.miniplayer.miniplayerNextPreviousButtons -->
+  <!-- layout.miniplayer.miniplayerNextPreviousButtonsPatch -->
   <string name="morphe_music_miniplayer_next_button_title">Zobraziť tlačidlo \'Ďalšia skladba\' v miniprehrávači</string>
   <string name="morphe_music_miniplayer_previous_button_title">Zobraziť tlačidlo \'Predošlá skladba\' v miniprehrávači</string>
-  <!-- layout.miniplayer.enableForcedMiniplayer -->
+  <!-- layout.miniplayer.enableForcedMiniplayerPatch -->
   <string name="morphe_music_enable_forced_miniplayer_title">Povoliť vynútenie miniprehrávača</string>
   <string name="morphe_music_enable_forced_miniplayer_summary">Zabráni automatickému rozbaleniu prehrávača na celú obrazovku, keď sa začne nová skladba</string>
+  <!-- layout.miniplayer.enableSwipeToDismissMiniplayerPatch -->
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_title">Povoliť zatiahnutie prstom na zatvorenie miniaplikácie</string>
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_summary">Umožňuje zatvoriť miniaplikáciu ťahom smerom nadol</string>
   <!-- layout.navigationbar.navigationBarPatch -->
   <string name="morphe_music_navigation_bar_screen_title">Navigačný panel</string>
   <string name="morphe_music_navigation_bar_screen_summary">Vyberte, ktoré tlačidlá sa majú zobraziť na spodnej navigačnej lište</string>

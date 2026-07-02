@@ -42,7 +42,7 @@ Second \"item\" text"</string>
   <string name="morphe_music_crossfade_curve_entry_ease_out_quad">Éasca go réidh</string>
   <string name="morphe_music_crossfade_curve_entry_smoothstep">Cuar S réidh</string>
   <!-- Empty string because custom preference handles the title itself -->
-  <string name="morphe_music_crossfade_curve_preview_outgoing">Ag teacht</string>
+  <string name="morphe_music_crossfade_curve_preview_outgoing">Ag imeacht</string>
   <string name="morphe_music_crossfade_curve_preview_incoming">Ag teacht isteach</string>
   <string name="morphe_music_crossfade_duration_title">Fad traschéimnithe</string>
   <string name="morphe_crossfade_duration_250ms">250 milleasoicind</string>
@@ -58,6 +58,8 @@ Second \"item\" text"</string>
   <string name="morphe_crossfade_duration_8000ms">8 soicind</string>
   <string name="morphe_crossfade_duration_9000ms">9 soicind</string>
   <string name="morphe_crossfade_duration_10000ms">10 soicind</string>
+  <string name="morphe_crossfade_duration_11000ms">11 soicind</string>
+  <string name="morphe_crossfade_duration_12000ms">12 soicind</string>
   <string name="morphe_music_crossfade_on_skip_title">Traschéimniú ar scipeáil láimhe</string>
   <string name="morphe_music_crossfade_on_skip_summary">Cuireann sé an éifeacht traschéimnithe i bhfeidhm nuair a léimeann tú go dtí an chéad rian eile de láimh</string>
   <string name="morphe_music_crossfade_on_auto_advance_title">Traschéimniú ar uath-dhul chun cinn</string>
@@ -67,15 +69,37 @@ Second \"item\" text"</string>
   <string name="morphe_music_crossfade_paused_toast">Traschéimniú curtha ar sos don seisiún seo</string>
   <string name="morphe_music_crossfade_resumed_toast">Atosaíodh traschéimniú</string>
   <string name="morphe_music_crossfade_video_mode_disabled_toast">Níl mód físe ar fáil agus traschéimniú cumasaithe</string>
+  <string name="morphe_music_crossfade_cast_unstable_toast">Tá an traschéimniú ar sos agus fuaim á teilgean nó á scáthánú. Tá an traschéimniú thar theilgean/scáthánú éagobhsaí agus b\'fhéidir nach féidir é a dheisiú choíche.</string>
   <string name="morphe_music_crossfade_about_title">Maidir</string>
-  <string name="morphe_music_crossfade_about_summary">"Tá traschéimniú ar fáil le YouTube Music 8.x
+  <string name="morphe_music_crossfade_about_summary">Conas a oibríonn traschéimniú — agus cathain nach n-oibríonn sé</string>
+  <!-- Banner row has no text; it shows a full-width graphic via a custom layout. -->
+  <string name="morphe_music_crossfade_about_how_title">Conas a oibríonn sé</string>
+  <string name="morphe_music_crossfade_about_how_summary">"Forluíonn traschéimniú deireadh amhráin amháin le tús an chéad cheann eile, ag céimniú ceann amháin síos de réir mar a thagann an ceann eile suas thar an fad agus an cuar roghnaithe agat.
 
-Brúigh an cnaipe suaitheadh ​​​​fada chun é a dhíchumasú/a chumasú
+Ritheann sé ar uath-ardú (nuair a chríochnaíonn amhrán leis féin) agus ar scipeálacha láimhe - tá a lasc féin ag gach ceann thuas. Ar uath-ardú tosaíonn an cumasc cúpla soicind sula gcríochnaíonn an t-amhrán.
 
-Cur i bhfeidhm gné ag VazerOG"</string>
+Teastaíonn YouTube Music 9.x nó níos nuaí."</string>
+  <string name="morphe_music_crossfade_about_best_title">Oibríonn sé is fearr le</string>
+  <string name="morphe_music_crossfade_about_best_summary">Athsheinm gnáth amhrán go hamhrán agus uath-ardú, athdhéanamh a haon (tá an t-amhrán ag céimniú isteach ann féin), agus fuaim áitiúil — cainteoir fóin, cluasáin sreangaithe, Bluetooth, nó USB.</string>
+  <string name="morphe_music_crossfade_about_quirks_title">Ní oibríonn sé i gceart go hiomlán</string>
+  <string name="morphe_music_crossfade_about_quirks_summary">"Seinneann físeáin cheoil mar fhuaim amháin agus an tras-chéimniú ar siúl (brúigh ar an gcnaipe suaite le sos a chur air más mian leat an físeán a fheiceáil)
+
+D’fhéadfadh amhráin atá níos giorra ná fad do chéimnithe an céimniú a scipeáil
+
+Féadfaidh an scáileán glasála nó an fógra staid sheanda a thaispeáint go hachomair i lár an aistrithe"</string>
+  <string name="morphe_music_crossfade_about_known_title">Fadhbanna aitheanta</string>
+  <string name="morphe_music_crossfade_about_known_summary">"Féadfar físeán ceoil atá socraithe mar an chéad amhrán — nó ceann a thosaigh lasmuigh den scuaine reatha — a thaispeáint go hachomair mar fhíseán sula dtosaíonn mód fuaime amháin i bhfeidhm.
+
+Má chuirtear sos ar an traschéimniú chun féachaint ar fhíseán ceoil, is féidir go bhfágfaidh sé sin roinnt físeáin dubh (na cinn a dtagann a bhfuaim ón bhfíseán féin). Má chuirtear sos ar an traschéimniú sula roghnaíonn tú an t-amhrán, seachnaítear é."</string>
+  <string name="morphe_music_crossfade_about_unsupported_title">Ní oibríonn sé ar chor ar bith</string>
+  <string name="morphe_music_crossfade_about_unsupported_summary">"Fuaim a chasadh nó a scáthánú (Chromecast, scáthánú scáileáin nó fuaime) — cuirtear sos ar an traschéimniú mar gheall ar a easpa cobhsaíochta agus b'fhéidir nach féidir é a dheisiú choíche.
+
+YouTube Music 8.x — ní ritheann an traschéimniú ach ar 9.x agus níos nuaí."</string>
+  <string name="morphe_music_crossfade_about_credit_title">Creidmheas</string>
+  <string name="morphe_music_crossfade_about_credit_summary">Gné traschéimnithe le VazerOG</string>
   <!-- interaction.permanentrepeat.permanentRepeatPatch -->
   <string name="morphe_music_play_permanent_repeat_title">Cumasaigh athrá buan</string>
-  <!-- layout.buttons.hideButtons -->
+  <!-- layout.buttons.hideButtonsPatch -->
   <string name="morphe_music_hide_cast_button_title">Folaigh an cnaipe teilgthe</string>
   <string name="morphe_music_hide_history_button_title">Folaigh cnaipe na staire</string>
   <string name="morphe_music_hide_notification_button_title">Folaigh cnaipe fógraí</string>
@@ -92,17 +116,20 @@ Cur i bhfeidhm gné ag VazerOG"</string>
   <string name="morphe_change_start_page_entry_playlists">Seinmliostaí</string>
   <string name="morphe_change_start_page_entry_search">Cuardaigh</string>
   <string name="morphe_change_start_page_entry_subscriptions">Síntiúis</string>
-  <!-- layout.compactheader.hideCategoryBar -->
+  <!-- layout.compactheader.hideCategoryBarPatch -->
   <string name="morphe_music_hide_category_bar_title">Folaigh an barra catagóirí</string>
-  <!-- layout.miniplayer.changeMiniplayerColor -->
+  <!-- layout.miniplayer.changeMiniplayerColorPatch -->
   <string name="morphe_music_change_miniplayer_color_title">Athraigh dath an mhion-imreora</string>
   <string name="morphe_music_change_miniplayer_color_summary">Meaitseálann sé dath an mhion-imreora leis an imreoir lánscáileáin</string>
-  <!-- layout.miniplayer.miniplayerNextPreviousButtons -->
+  <!-- layout.miniplayer.miniplayerNextPreviousButtonsPatch -->
   <string name="morphe_music_miniplayer_next_button_title">Taispeáin an cnaipe seo chugainn sa mhionimreoir</string>
   <string name="morphe_music_miniplayer_previous_button_title">Taispeáin an cnaipe roimhe seo sa mhionimreoir</string>
-  <!-- layout.miniplayer.enableForcedMiniplayer -->
+  <!-- layout.miniplayer.enableForcedMiniplayerPatch -->
   <string name="morphe_music_enable_forced_miniplayer_title">Cumasaigh mionimreoir éigeantach</string>
   <string name="morphe_music_enable_forced_miniplayer_summary">Coscann sé seo an seinnteoir ó leathnú go huathoibríoch go lánscáileán nuair a thosaíonn rian nua</string>
+  <!-- layout.miniplayer.enableSwipeToDismissMiniplayerPatch -->
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_title">Cumasaigh svaidhpeáil chun an miniimreoir a dhíbhe</string>
+  <string name="morphe_music_enable_swipe_to_dismiss_miniplayer_summary">Ceadaíonn sé seo an miniplayer a dhíbhe trí shlaodadh síos air</string>
   <!-- layout.navigationbar.navigationBarPatch -->
   <string name="morphe_music_navigation_bar_screen_title">Barra nascleanúna</string>
   <string name="morphe_music_navigation_bar_screen_summary">Roghnaigh cé na cnaipí a thaispeántar sa bharra nascleanúna bun</string>
