@@ -20,15 +20,7 @@ import app.morphe.patches.fstop.shared.Constants.COMPATIBILITY_FSTOP
 @Suppress("unused")
 val fastDeletePatch = bytecodePatch(
     name = "Fast batch delete",
-    description = "Speeds up deleting many selected files at once. " +
-        "Stock F-Stop deletes files one by one, making a separate " +
-        "MediaStore lookup and delete call for each file — slow when " +
-        "selecting 30, 100, 500+ images. This patch batches those " +
-        "MediaStore calls into a single SQL delete per storage volume, " +
-        "so deletion feels nearly instant regardless of selection size. " +
-        "Works for both direct delete (Recycle Bin off) and move-to-" +
-        "Recycle-Bin (Recycle Bin on), as well as deleting from inside " +
-        "the Recycle Bin.",
+    description = "Makes deleting many selected files at once nearly instant, regardless of whether Recycle Bin is on or off.",
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 
