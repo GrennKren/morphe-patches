@@ -290,12 +290,14 @@
             },
             {
               "version": "20.31.42",
+              "versionCodes": null,
               "isExperimental": false,
               "minSdk": 28,
               "description": null
             },
             {
               "version": "20.21.37",
+              "versionCodes": null,
               "isExperimental": false,
               "minSdk": 26,
               "description": null
