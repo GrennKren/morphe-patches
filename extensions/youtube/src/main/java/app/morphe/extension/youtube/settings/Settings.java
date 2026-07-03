@@ -594,6 +594,10 @@ public class Settings extends SharedYouTubeSettings {
     private static final BooleanSetting DEPRECATED_RELOAD_VIDEO = new BooleanSetting("morphe_reload_video", FALSE);
     private static final BooleanSetting DEPRECATED_SEEKBAR_TAPPING = new BooleanSetting("morphe_seekbar_tapping", FALSE);
 
+    // Patch Block Autoplay Playlist/mix
+    public static final BooleanSetting BLOCK_PLAYLIST_AUTONEXT = new BooleanSetting("morphe_block_playlist_autonext", FALSE, false);
+    public static final BooleanSetting BLOCK_PLAYLIST_AUTONEXT_BUTTON = new BooleanSetting("morphe_block_playlist_autonext_button", TRUE);
+
     // Unified SponsorBlock keys under the morphe_sb_* namespace (previously raw sb_*).
     private static final BooleanSetting DEPRECATED_SB_ENABLED = new BooleanSetting("sb_enabled", TRUE, false, false);
     private static final StringSetting  DEPRECATED_SB_PRIVATE_USER_ID = new StringSetting("sb_private_user_id_Do_Not_Share", "", false, false);
