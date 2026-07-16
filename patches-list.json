@@ -1,6 +1,6 @@
 {
   "NOTE": "Do NOT manually edit this file. This file is automatically updated when semantic release (release.yml) runs. Manually editing this file can break your releases and break third party tools that use this file.",
-  "version": "1.35.0",
+  "version": "1.35.0-experimental.1",
   "patches": [
     {
       "name": "Add to queue",
@@ -300,6 +300,13 @@
               "version": "21.05.265",
               "versionCodes": null,
               "isExperimental": true,
+              "minSdk": 28,
+              "description": null
+            },
+            {
+              "version": "21.04.223",
+              "versionCodes": null,
+              "isExperimental": false,
               "minSdk": 28,
               "description": null
             },
@@ -7253,6 +7260,34 @@
       "default": false,
       "dependencies": [],
       "compatiblePackages": null,
+      "options": []
+    },
+    {
+      "name": "Persist folder cover metadata",
+      "description": "Makes folder cover thumbnails load instantly on restart, just like image thumbnails do. The first time you view a folder its cover is remembered, so every restart after that shows all your folder covers immediately instead of loading them one by one.",
+      "default": true,
+      "dependencies": [],
+      "compatiblePackages": [
+        {
+          "packageName": "com.fstop.photo",
+          "name": "F-Stop",
+          "description": null,
+          "apkFileType": "APK_REQUIRED",
+          "appIconColor": "#2196F3",
+          "signatures": [
+            "fe0adb3436c0f08f91240b24da54def1bed0123ed6a9f9380f57a3ef02846b51"
+          ],
+          "targets": [
+            {
+              "version": "5.5.484",
+              "versionCodes": null,
+              "isExperimental": false,
+              "minSdk": 24,
+              "description": null
+            }
+          ]
+        }
+      ],
       "options": []
     },
     {
