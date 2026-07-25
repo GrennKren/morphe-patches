@@ -18,7 +18,6 @@ import app.morphe.patches.youtube.layout.player.buttons.playerOverlayButtonsHook
 import app.morphe.patches.youtube.misc.extension.sharedExtensionPatch
 import app.morphe.patches.youtube.misc.playercontrols.addLegacyBottomControl
 import app.morphe.patches.youtube.misc.playercontrols.initializeLegacyBottomControl
-import app.morphe.patches.youtube.misc.playercontrols.injectVisibilityCheckCall
 import app.morphe.patches.youtube.misc.playercontrols.legacyPlayerControlsPatch
 import app.morphe.patches.youtube.misc.playercontrols.legacyPlayerControlsResourcePatch
 import app.morphe.patches.youtube.misc.settings.PreferenceScreen
@@ -363,7 +362,9 @@ val blockPlaylistAutonextPatch = bytecodePatch(
         addPlayerBottomButton(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
 
         // ── Legacy button system ──
+        // Note: injectVisibilityCheckCall was removed in upstream v1.36.0.
+        // The new system handles visibility via LegacyPlayerControlButton internally
+        // and via playerControlsOverlayVisibilityPatch (setPlayerControlsVisibility enum hook).
         initializeLegacyBottomControl(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
-        injectVisibilityCheckCall(EXTENSION_BUTTON_CLASS_DESCRIPTOR)
     }
 }
