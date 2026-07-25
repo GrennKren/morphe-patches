@@ -52,6 +52,21 @@ public class BlockPlaylistAutonextButton {
     }
 
     /**
+     * Adapter for the new LegacyPlayerControlButton.PlayerControlButtonStatus API.
+     * Returns ButtonVisibility.ENABLED when the button should be visible,
+     * ButtonVisibility.DISABLED otherwise.
+     *
+     * This replaces the old BooleanSetting-based constructor argument and is
+     * required for v1.36.0+ where LegacyPlayerControlButton no longer accepts
+     * a boolean-returning predicate directly.
+     */
+    private static LegacyPlayerControlButton.ButtonVisibility shouldShowButtonVisibility() {
+        return shouldShowButton()
+                ? LegacyPlayerControlButton.ButtonVisibility.ENABLED
+                : LegacyPlayerControlButton.ButtonVisibility.DISABLED;
+    }
+
+    /**
      * Width percentage for overlay button spacing, matching PlayerOverlayButton.
      * Controls how much horizontal space each button slot occupies, relative
      * to the source (fullscreen) button width. More buttons = tighter spacing
@@ -276,8 +291,9 @@ public class BlockPlaylistAutonextButton {
                     "morphe_block_playlist_autonext_button",
                     null,
                     null,
-                    // Button is shown only when in a playlist/mix AND setting is enabled
-                    BlockPlaylistAutonextButton::shouldShowButton,
+                    // Button is shown only when in a playlist/mix AND setting is enabled.
+                    // Uses ButtonVisibility-returning predicate for v1.36.0+ compatibility.
+                    BlockPlaylistAutonextButton::shouldShowButtonVisibility,
                     view -> toggleAutonext(),
                     null
             );
@@ -338,26 +354,5 @@ public class BlockPlaylistAutonextButton {
         } catch (Exception ex) {
             Logger.printException(() -> "updateLegacyIcon failure", ex);
         }
-    }
-
-    /**
-     * Injection point — Legacy visibility hook.
-     */
-    public static void setVisibilityNegatedImmediate() {
-        if (legacyInstance != null) legacyInstance.setVisibilityNegatedImmediate();
-    }
-
-    /**
-     * Injection point — Legacy visibility hook.
-     */
-    public static void setVisibilityImmediate(boolean visible) {
-        if (legacyInstance != null) legacyInstance.setVisibilityImmediate(visible);
-    }
-
-    /**
-     * Injection point — Legacy visibility hook.
-     */
-    public static void setVisibility(boolean visible, boolean animated) {
-        if (legacyInstance != null) legacyInstance.setVisibility(visible, animated);
     }
 }
