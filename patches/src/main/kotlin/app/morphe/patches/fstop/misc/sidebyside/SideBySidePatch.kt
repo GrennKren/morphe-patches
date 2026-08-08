@@ -8,8 +8,8 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
-import app.morphe.patches.all.misc.packagename.changePackageNamePatch
-import app.morphe.patches.all.misc.packagename.setOrGetFallbackPackageName
+import app.morphe.patches.all.misc.clone.cloneAppPatch
+import app.morphe.patches.all.misc.clone.setOrGetFallbackPackageName
 import app.morphe.patches.fstop.shared.Constants.COMPATIBILITY_FSTOP
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -59,7 +59,7 @@ val sideBySidePatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_FSTOP)
 
-    dependsOn(changePackageNamePatch)
+    dependsOn(cloneAppPatch)
 
     // Inline resource patch that changes the package name and updates all manifest
     // references so the patched app can be installed alongside the original.

@@ -6,8 +6,8 @@ package app.morphe.patches.fxexplorer.misc.sidebyside
 
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.patch.resourcePatch
-import app.morphe.patches.all.misc.packagename.changePackageNamePatch
-import app.morphe.patches.all.misc.packagename.setOrGetFallbackPackageName
+import app.morphe.patches.all.misc.clone.cloneAppPatch
+import app.morphe.patches.all.misc.clone.setOrGetFallbackPackageName
 import app.morphe.patches.fxexplorer.shared.Constants.COMPATIBILITY_FX_EXPLORER
 
 /**
@@ -38,7 +38,7 @@ val sideBySidePatch = bytecodePatch(
 ) {
     compatibleWith(COMPATIBILITY_FX_EXPLORER)
 
-    dependsOn(changePackageNamePatch)
+    dependsOn(cloneAppPatch)
 
     dependsOn(
         resourcePatch {
